@@ -1006,7 +1006,7 @@ Panel {
                     font.pixelSize: Style.font.bodySmall
                   }
                   Text {
-                    text: modelData.time
+                    text: Model.threadTime(modelData.time)
                     color: root.muted
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.caption
@@ -1110,16 +1110,6 @@ Panel {
         Item {
           width: parent.width
           height: Style.space(32)
-          Text {
-            anchors.left: parent.left
-            anchors.leftMargin: Style.space(16)
-            anchors.verticalCenter: parent.verticalCenter
-            textFormat: Text.PlainText
-            text: "Tether by Zack Bartel · github.com/zackb/tether"
-            color: root.muted
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
-          }
           Text {
             anchors.right: parent.right
             anchors.rightMargin: Style.space(16)
