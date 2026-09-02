@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.6] — 2026-09-02
+
+- Re-advertise is a real button and shows Tether’s reply on Notify
+- Link distinguishes Bluetooth messages (already paired) from the iOS app (clipboard)
+- Watch `known_hosts.json` so a GTK Wi-Fi pair shows up without waiting for refresh
+
 ## [0.3.5] — 2026-09-02
 
 - Link Accept uses a pending `tether --accept` fingerprint from tetherd.log (iOS app initiates Wi-Fi pairing)

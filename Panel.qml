@@ -418,32 +418,41 @@ Panel {
           Column {
             visible: root.notifications.length === 0
             anchors.centerIn: parent
-            spacing: Style.space(8)
+            spacing: Style.space(10)
             width: parent.width - Style.space(40)
             Text {
               width: parent.width
               wrapMode: Text.WordWrap
               horizontalAlignment: Text.AlignHCenter
+              textFormat: Text.PlainText
               text: root.status && root.status.ancs
                 ? "No mirrored notifications yet"
-                : "Notifications need Bluetooth LE. Toggle Bluetooth off/on on the iPhone, or ask Tether to re-advertise."
+                : "Notifications need Bluetooth LE. Turn Bluetooth off and on on the iPhone — Re-advertise cannot clear a wedged phone radio."
               color: root.muted
               font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
             }
             Text {
-              visible: !(root.status && root.status.ancs)
+              visible: root.actionNote !== ""
               width: parent.width
+              wrapMode: Text.WordWrap
               horizontalAlignment: Text.AlignHCenter
-              text: "Re-advertise permissions"
-              color: root.accent
+              textFormat: Text.PlainText
+              text: root.actionNote
+              color: root.fg
               font.family: root.fontFamily
-              font.pixelSize: Style.font.bodySmall
-              MouseArea {
-                anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
-                onClicked: if (hw) hw.solicit()
-              }
+              font.pixelSize: Style.font.caption
+            }
+            Button {
+              visible: !(root.status && root.status.ancs)
+              anchors.horizontalCenter: parent.horizontalCenter
+              text: "Re-advertise"
+              bordered: true
+              foreground: root.fg
+              accent: root.accent
+              fontFamily: root.fontFamily
+              fontSize: Style.font.bodySmall
+              onClicked: if (hw) hw.solicit()
             }
           }
         }
@@ -486,8 +495,12 @@ Panel {
               wrapMode: Text.WordWrap
               text: {
                 var p = Model.firstPhone(root.devices)
-                if (!p) return "No iPhone on Bluetooth. Pair in the iPhone Bluetooth menu, then Pair here."
-                return p.name + (p.connected ? " — connected" : " — not connected")
+                if (!p) return "No iPhone on Bluetooth. Pair in tether-gtk or Settings."
+                var bits = [p.name]
+                if (p.connected) bits.push("connected")
+                if (root.status && root.status.map) bits.push("messages live")
+                else bits.push("messages not ready")
+                return bits.join(" · ")
               }
               color: root.fg
               font.family: root.fontFamily
@@ -530,8 +543,8 @@ Panel {
                 if (root.pendingPair && root.pendingPair.fingerprint)
                   return "Pairing request from " + (root.pendingPair.name || "iPhone") + ". Accept, then confirm on the phone."
                 if (root.lanPeers.length > 0)
-                  return root.lanPeers[0].name + " is on the network. Open Tether on the iPhone and tap this PC; Accept will appear here."
-                return "Open Tether on the iPhone. This PC is advertising as omarchy; the app should see it."
+                  return "iOS app is on the network. In the iPhone app, tap this PC (omarchy). Accept will appear here. tether-gtk Bluetooth pairing is only for messages, not clipboard."
+                return "Open the Tether iOS app and tap omarchy to pair clipboard and files."
               }
               color: root.fg
               font.family: root.fontFamily

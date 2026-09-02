@@ -533,13 +533,34 @@ BarWidget {
     onExited: root.nextStep()
   }
 
+  FileView {
+    id: hostsFile
+    path: Quickshell.env("HOME") + "/.config/tether/known_hosts.json"
+    watchChanges: true
+    printErrors: false
+    onFileChanged: reload()
+    onLoaded: {
+      var parsed = Model.parseLanDevices(text())
+      if (parsed.length > 0) root.lanDevices = parsed
+    }
+  }
+
   Process {
     id: solicitProc
     command: ["tether", "--bt-solicit"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var msg = Model.clipPreview(text)
+        if (msg) root.actionNote = msg
+      }
+    }
     onExited: function(code) {
-      root.actionNote = code === 0
-        ? "Re-advertising. Check the iPhone Bluetooth (i) menu for Show Message Notifications and Sync Contacts."
-        : "Could not re-advertise permissions."
+      if (!root.actionNote) {
+        root.actionNote = code === 0
+          ? "Asked the iPhone to re-offer notification access. If Notify stays dark, turn Bluetooth off and on on the iPhone."
+          : "Could not re-advertise permissions."
+      }
       root.refresh()
     }
   }
