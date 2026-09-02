@@ -33,4 +33,4 @@ The Omarchy bar widget is only a UI on top of Tether. If you remove it from the 
 
 The plugin must not be listed as a standalone iMessage client. Marketplace description, README, and install steps must say Tether is a required dependency.
 
-Do not copy Tether source into this repo. Keep credit and the GitHub link in the README and the panel footer.
+Do not copy Tether source into this repo. Keep credit and the GitHub link in the README, LICENSE, and manifest description — not in the popout chrome.

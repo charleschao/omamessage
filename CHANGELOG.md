@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.8] — 2026-09-02
+
+- Time-only stamps on bubbles (no date)
+- Unread dot clears after a conversation is opened (local watermark)
+- Compact thread header; conversation list fills the panel
+- Open Tether stays on the inbox page only
+- Marketplace: `preview.png`, submit tags/category match the live form
+- Docs: credit Zack in README, LICENSE, and manifest — not the popout chrome
+
 ## [0.3.7] — 2026-09-02
 
 - Pairing Accept reads pairing lines from tetherd.log instead of a 500-line tail (UnixServer spam)

@@ -18,11 +18,15 @@ Omamessage is an Omarchy bar widget. It is not Apple iMessage and it does not bu
 
 ## Tags
 
-messaging, sms, iphone, bluetooth, tether, omamessage
+The submit form allows **one to three** tags from a fixed list. More than three are rejected.
+
+Pick: **Bar**, **Quickshell**, **Hyprland**
+
+Optional suggested tag: `messaging`
 
 ## Category
 
-Communication / Productivity
+**Widgets** (the form has no Communication option)
 
 ## Availability
 
@@ -45,6 +49,8 @@ Manual setup: requires Tether by Zack Bartel (github.com/zackb/tether) installed
 - [ ] docs/REQUIRED.md is in the public repo
 - [ ] manifest description mentions the dependency and credit
 - [ ] LICENSE notes this is the widget only
-- [ ] Panel footer still credits Zack Bartel
+- [ ] README, LICENSE, and manifest credit Zack Bartel (not the popout chrome)
+- [ ] `preview.png` is at the repo root
+- [ ] Submit form: category Widgets; tags Bar, Quickshell, Hyprland (max three)
 - [ ] `omarchy plugin validate` passes on a clean clone
 - [ ] Test machine has `tether` on PATH; a machine without it fails clearly

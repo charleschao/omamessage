@@ -34,7 +34,7 @@ Availability: **Manual setup**. Ask reviewers to apply the `manual-setup` label.
 Manual setup: requires Tether by Zack Bartel (github.com/zackb/tether) installed separately. Please apply manual-setup. Note: This plugin requires additional setup before it can be enabled. Follow the upstream installation instructions.
 ```
 
-Optional: add `preview.png` at the repo root (marketplace optimizes it).
+`preview.png` at the repo root (marketplace optimizes it).
 
 ## 3. Submit
 
@@ -42,8 +42,8 @@ Open the marketplace submit form from https://plugins.omarchy.org/publish.html w
 
 - Repository: `https://github.com/charleschao/omamessage`
 - Name: Omamessage
-- Category: Communication
-- Tags: messaging, sms, iphone, bluetooth, tether, omamessage
+- Category: Widgets
+- Tags: Bar, Quickshell, Hyprland (max three; optional suggested tag: messaging)
 
 Automated validation checks the current commit before a maintainer approves.
 
