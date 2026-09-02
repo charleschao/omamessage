@@ -544,15 +544,6 @@ Panel {
               fontSize: Style.font.bodySmall
               onClicked: if (hw) hw.pairLan(root.lanPeers[0])
             }
-            Button {
-              text: "Open Tether"
-              bordered: true
-              foreground: root.fg
-              accent: root.accent
-              fontFamily: root.fontFamily
-              fontSize: Style.font.bodySmall
-              onClicked: if (hw) hw.openApp()
-            }
 
             Text {
               text: "CLIPBOARD"
