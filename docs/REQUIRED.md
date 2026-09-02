@@ -29,7 +29,7 @@ Without Tether:
 
 `tetherd` (the daemon) must stay running in the background. That is the process that holds the Bluetooth MAP link. You do **not** need the `tether-gtk` window open.
 
-The Omarchy bar widget is only the inbox UI. If you remove it from the bar, Super+Alt+M still opens tether-gtk. You need one or the other (or both) to read/send from the desktop; you always need `tetherd`.
+The Omarchy bar widget is only a UI on top of Tether. If you remove it from the bar, Super+Alt+M still opens tether-gtk. You need one or the other (or both) to read/send from the desktop; you always need `tetherd`.
 
 The plugin must not be listed as a standalone iMessage client. Marketplace description, README, and install steps must say Tether is a required dependency.
 

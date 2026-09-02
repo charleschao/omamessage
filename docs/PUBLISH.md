@@ -17,7 +17,7 @@ omarchy plugin validate .
 git status
 # first time:
 gh repo create omamessage --public --source=. --remote=origin --push \
-  --description "Omarchy bar inbox for Tether (Zack Bartel). Requires Tether installed separately."
+  --description "Omarchy bar widget for Tether (Zack Bartel). Requires Tether installed separately."
 ```
 
 Confirm: https://github.com/charleschao/omamessage is public and the current commit has `manifest.json` at `/`.

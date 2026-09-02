@@ -1,6 +1,6 @@
 # Omamessage
 
-Omarchy bar inbox for iPhone SMS, iMessage, notifications, clipboard, and files — driven by [Tether](https://github.com/zackb/tether) by **Zack Bartel**.
+Omarchy bar widget for iPhone SMS, iMessage, notifications, clipboard, and files — driven by [Tether](https://github.com/zackb/tether) by **Zack Bartel**.
 
 Tether’s advantage over [BlueBubbles](https://bluebubbles.app/) is that you do **not** need a Mac or a macOS VM running in the background. Continuity-style features talk to the iPhone from Linux.
 
