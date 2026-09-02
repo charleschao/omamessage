@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.charleschao.omamessage",
+  "name": "Omamessage",
+  "version": "0.2.0",
+  "author": "charleschao",
+  "license": "MIT",
+  "description": "Requires Tether by Zack Bartel installed separately (github.com/zackb/tether). Omarchy bar inbox for iPhone SMS/iMessage via the local tetherd CLI — not a standalone messenger.",
+  "homepage": "https://github.com/charleschao/omamessage",
+  "kinds": ["bar-widget"],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Omamessage",
+    "description": "Requires Tether (Zack Bartel, github.com/zackb/tether) installed separately. Devices, threads, and notifications via the local CLI.",
+    "category": "Communication",
+    "aliases": ["omamessage", "tether", "imessage", "sms", "iphone"],
+    "allowMultiple": false,
+    "defaultSection": "right"
+  },
+  "installation": {
+    "mode": "manual",
+    "note": "This plugin requires additional setup before it can be enabled. Follow the upstream installation instructions."
+  }
+}

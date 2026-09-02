@@ -1,0 +1,19 @@
+# Editor / OS
+*~
+*.swp
+*.swo
+.DS_Store
+.idea/
+.vscode/
+*.code-workspace
+
+# QML / Quickshell junk
+*.qmlc
+*.jsc
+.qmlcache/
+
+# Local secrets or machine state (never ship)
+.env
+*.pem
+known_hosts.json
+tetherd.log
