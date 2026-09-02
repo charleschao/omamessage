@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.charleschao.omamessage",
   "name": "Omamessage",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "author": "charleschao",
   "license": "MIT",
   "description": "Requires Tether by Zack Bartel installed separately (github.com/zackb/tether). Omarchy bar inbox for iPhone SMS/iMessage, notifications, clipboard, and files via the local tether CLI — not a standalone messenger.",

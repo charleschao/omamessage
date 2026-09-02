@@ -91,8 +91,6 @@ BarWidget {
         root.refreshStep = 0
         if (root.opened && root.tab === "settings")
           root.loadSettings()
-        if (root.opened && root.tab === "link")
-          root.loadLink()
         if (root.page === "thread" && root.selectedThread && root.selectedThread.handle)
           root.loadMessages(root.selectedThread.handle)
       }
@@ -172,9 +170,14 @@ BarWidget {
   function sendTo(handle, text) {
     var h = root.normalizeHandle(handle)
     var t = String(text || "").trim()
-    if (!h || !t) return
+    if (!h || !t) return false
+    if (sendProc.running) {
+      root.actionNote = "Still sending the previous message."
+      return false
+    }
     sendProc.command = ["tether", "--bt-send", h, t]
-    if (!sendProc.running) sendProc.running = true
+    sendProc.running = true
+    return true
   }
 
   function sendReply() {
@@ -413,7 +416,7 @@ BarWidget {
 
   Process {
     id: pairLogProc
-    command: ["bash", "-lc", "tail -n 500 -- \"$HOME/.local/state/tether/tetherd.log\" 2>/dev/null"]
+    command: ["bash", "-lc", "grep -E 'Pairing Request Pending|Pairing Accepted|Pairing Rejected' -- \"$HOME/.local/state/tether/tetherd.log\" 2>/dev/null | tail -n 30"]
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: root.pendingPair = Model.parsePendingPair(text)
@@ -455,8 +458,8 @@ BarWidget {
     command: ["tether", "--bt-pair", ""]
     onExited: function(code) {
       root.actionNote = code === 0
-        ? "Pairing started. Confirm the code on the iPhone. Prefer Open app if no dialog appears."
-        : "Pairing failed. Open the Tether app to confirm the code, or try explicit-pair in Settings."
+        ? "Pairing started. Confirm the code on the iPhone. Prefer Open Tether if no dialog appears."
+        : "Pairing failed. Open Tether to confirm the code, or try explicit-pair in Settings."
       root.refresh()
     }
   }

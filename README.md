@@ -51,20 +51,20 @@ Removing the bar widget does not stop Messages if `tetherd` / `tether-gtk` still
 - [Omarchy](https://omarchy.org/) with the Quattro shell
 - [Tether](https://github.com/zackb/tether) by **Zack Bartel** (`tether` + `tetherd` on `PATH`; Arch: `tether-bin` or `tether`)
 - An iPhone paired over Bluetooth with **Show Message Notifications** and **Sync Contacts** enabled
-- Optional: Tether iOS app on the same Wi-Fi LAN for clipboard and file transfer
+- Optional: Tether iOS app on the same LAN (Wi-Fi or ethernet) for clipboard and file transfer
 - `tetherd` must stay running (holds the Bluetooth MAP session)
 
 ## Features
 
-- Device chips and Messages / Contacts / Notify / Wi-Fi status
-- Messages: conversation list (unread counts), transcript, reply, new message
+- Hero status plus the paired iPhone name
+- Messages: conversation list (unread dots), transcript, reply, new message
 - Notifications: mirrored ANCS (needs Bluetooth LE); re-advertise permissions
-- Link (always visible): Bluetooth pair, iOS app status, clipboard pull/push, file drop + Send, recent `~/Downloads`
+- Link (always visible): Bluetooth vs iOS-app status, clipboard pull/push, file drop + Send, recent `~/Downloads`
 - Settings: MAP / notification toggles, pair / explicit-pair / unpair, accept iOS fingerprint, `tether --bt-setup` remaining steps
 - Follows the Omarchy light or dark theme (`omarchy theme set`)
 - Middle-click the bar label, or footer **Open Tether**: `tether-gtk`
 
-Clipboard, files, and iOS pairing **disable while this PC’s Wi-Fi is off**. Bluetooth messages still work.
+Clipboard, files, and iOS pairing **disable while this PC has no LAN** (ethernet counts). Bluetooth messages still work. GTK “connected” is not the same as a pinned `tetherd` pair (`tether --list-devices`).
 
 Not in this bar (they stay in Tether): OTP / TOTP vault, Firefox and Thunderbird add-ons, native-messaging host.
 

@@ -54,15 +54,15 @@ Panel {
 
   function sendNew() {
     if (!hw) return
-    hw.sendTo(newTo.text, newBody.text)
-    newBody.text = ""
+    if (hw.sendTo(newTo.text, newBody.text))
+      newBody.text = ""
   }
 
   function sendReplyNow() {
-    if (!hw || !replyField.text.trim()) return
+    if (!hw || !replyField.text.trim() || !root.selectedThread) return
     hw.replyDraft = replyField.text
-    hw.sendReply()
-    replyField.text = ""
+    if (hw.sendTo(root.selectedThread.handle, replyField.text))
+      replyField.text = ""
   }
 
   function open() { root.controller.show() }
@@ -121,7 +121,7 @@ Panel {
         // ---- header ----
         Item {
           width: parent.width
-          height: headerCol.implicitHeight + Style.space(20)
+          height: headerCol.implicitHeight
 
           Column {
             id: headerCol
@@ -756,7 +756,7 @@ Panel {
             Text {
               width: parent.width - Style.space(28)
               wrapMode: Text.WordWrap
-              text: "Toggles are Tether settings. The chips above are the live link (Notify needs Bluetooth LE)."
+              text: "Toggles are Tether settings. The hero status is the live link (Notify needs Bluetooth LE)."
               color: root.muted
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
@@ -843,7 +843,7 @@ Panel {
             Text {
               width: parent.width - Style.space(28)
               wrapMode: Text.WordWrap
-              text: "Pairing shows a code on the iPhone. If no dialog appears here, use Open app (tether-gtk). Explicit pair skips connect-first; notifications may not work on that bond."
+              text: "Pairing shows a code on the iPhone. If no dialog appears here, use Open Tether. Explicit pair skips connect-first; notifications may not work on that bond."
               color: root.muted
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
@@ -890,7 +890,7 @@ Panel {
             }
 
             Text {
-              text: "iOS APP (WIFI)"
+              text: "iOS APP"
               color: root.muted
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
@@ -900,8 +900,8 @@ Panel {
               width: parent.width - Style.space(28)
               wrapMode: Text.WordWrap
               text: !root.wifiUp
-                ? "Turn Wi-Fi on this PC, then open Tether on the iPhone on the same LAN."
-                : "Paste the fingerprint from the iPhone app to accept a pending pair. Clipboard and files need this pairing."
+                ? "Connect this PC to the same LAN as the iPhone (ethernet is fine)."
+                : "If Accept appears on Link, use that. Otherwise paste a pending fingerprint from tetherd.log. GTK “connected” is not the same as a pinned tetherd pair."
               color: root.fg
               font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
@@ -1115,7 +1115,7 @@ Panel {
             anchors.leftMargin: Style.space(16)
             anchors.verticalCenter: parent.verticalCenter
             textFormat: Text.PlainText
-            text: "Tether by Zack Bartel"
+            text: "Tether by Zack Bartel · github.com/zackb/tether"
             color: root.muted
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption

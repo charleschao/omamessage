@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.7] — 2026-09-02
+
+- Pairing Accept reads pairing lines from tetherd.log instead of a 500-line tail (UnixServer spam)
+- Do not clear compose text if a send is already in flight
+- Docs: LAN includes ethernet; README matches the current UI
+
 ## [0.3.6] — 2026-09-02
 
 - Re-advertise is a real button and shows Tether’s reply on Notify

@@ -246,7 +246,7 @@ function parseDiscover(text) {
       var ip = host[1]
       var port = parseInt(host[2], 10)
       cur.hosts.push({ ip: ip, port: port })
-      if (ip === "127.0.0.1" || ip === "::1") cur.local = true
+      if (ip === "127.0.0.1" || ip === "::1" || ip === "localhost") cur.local = true
     }
   }
   if (cur) out.push(cur)
@@ -311,7 +311,8 @@ function fileFromUrl(url) {
   var u = String(url || "")
   if (u.indexOf("file://") === 0) {
     u = decodeURIComponent(u.slice(7))
-    if (u.indexOf("/localhost") === 0) u = u.slice(9)
+    if (u.indexOf("localhost/") === 0) u = u.slice(9)
+    else if (u.indexOf("/localhost/") === 0) u = u.slice(10)
   }
   return u
 }
