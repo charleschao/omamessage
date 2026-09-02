@@ -29,7 +29,14 @@ After Tether works on the machine:
 
 ```sh
 omarchy plugin add https://github.com/charleschao/omamessage.git --enable
-omarchy bar move io.github.charleschao.omamessage --section right
+```
+
+When you enable it in a terminal, Omarchy asks **left / center / right**. The default is **right**. Scripts using `--yes` skip the question and land on the right.
+
+Move it later:
+
+```sh
+omarchy bar move io.github.charleschao.omamessage --section left
 ```
 
 Validate a local checkout:

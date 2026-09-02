@@ -55,4 +55,6 @@ Users install with:
 omarchy plugin add https://github.com/charleschao/omamessage.git --enable
 ```
 
+Interactive enable asks left / center / right (default **right**, from `barWidget.defaultSection`). `--yes` skips the prompt and uses right.
+
 Bump `manifest.json` `version` for each release users should pull via `omarchy plugin update`.
