@@ -4,8 +4,6 @@ Omarchy bar inbox for iPhone SMS, iMessage, notifications, clipboard, and files 
 
 **Requires Tether by Zack Bartel installed separately.** Omamessage is not Apple iMessage, not a Tether fork, and not a standalone messenger. It does not bundle `tetherd`, `tether-gtk`, or the iOS app. If `tether` is missing from `PATH`, the widget has nothing to show.
 
-The popout follows the Omarchy light or dark theme (`omarchy theme set`).
-
 ## Required: install Tether first
 
 Arch:
@@ -61,6 +59,7 @@ Removing the bar widget does not stop Messages if `tetherd` / `tether-gtk` still
 - Notifications: mirrored ANCS (needs Bluetooth LE); re-advertise permissions
 - Link (always visible): Bluetooth pair, iOS app status, clipboard pull/push, file drop + Send, recent `~/Downloads`
 - Settings: MAP / notification toggles, pair / explicit-pair / unpair, accept iOS fingerprint, `tether --bt-setup` remaining steps
+- Follows the Omarchy light or dark theme (`omarchy theme set`)
 - Middle-click the bar label, or footer **Open app**: `tether-gtk`
 
 Clipboard, files, and iOS pairing **disable while this PC’s Wi-Fi is off**. Bluetooth messages still work.
@@ -77,6 +76,8 @@ Tether — daemon, GTK app, iOS companion, Bluetooth MAP/ANCS — is by **Zack B
 - Author: Zack Bartel
 
 ## Marketplace
+
+Plugin id: `io.github.charleschao.omamessage`
 
 Listing copy and the submit checklist: [docs/MARKETPLACE.md](docs/MARKETPLACE.md)
 
