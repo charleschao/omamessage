@@ -32,10 +32,10 @@ Panel {
   readonly property var btSetup: hw && hw.btSetup ? hw.btSetup : ({ complete: true, text: "" })
   readonly property string actionNote: hw ? hw.actionNote : ""
   readonly property var tabs: [
-    { id: "messages", label: "Messages" },
-    { id: "notifications", label: "Notifications" },
-    { id: "link", label: "Link" },
-    { id: "settings", label: "Settings" }
+    { value: "messages", label: "Messages" },
+    { value: "notifications", label: "Notify" },
+    { value: "link", label: "Link" },
+    { value: "settings", label: "Settings" }
   ]
   property bool unpairOpen: false
 
@@ -95,7 +95,7 @@ Panel {
     centerOnBar: true
     focusTarget: keyCatcher
     contentWidth: panel.fittedContentWidth(root.paneWidth)
-    contentHeight: panel.fittedContentHeight(Style.space(600))
+    contentHeight: panel.fittedContentHeight(Style.space(540))
 
     PanelKeyCatcher {
       id: keyCatcher
@@ -116,149 +116,92 @@ Panel {
         width: parent.width
         spacing: 0
 
-        // ---- header: devices ----
-        Column {
+        // ---- header ----
+        Item {
           width: parent.width
-          leftPadding: Style.space(14)
-          rightPadding: Style.space(14)
-          topPadding: Style.space(12)
-          bottomPadding: Style.space(10)
-          spacing: Style.space(8)
+          height: headerCol.implicitHeight + Style.space(20)
 
-          Row {
-            spacing: Style.space(8)
-            Text {
-              text: root.page === "thread" && root.selectedThread
-                ? root.selectedThread.name
-                : (root.page === "notice" ? "Notification" : "Omamessage")
-              color: root.fg
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.title
-            }
-            Text {
-              visible: root.page === "inbox"
-              text: Model.statusTitle(root.status)
-              color: root.muted
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.caption
-              font.letterSpacing: 0.8
-              anchors.verticalCenter: parent.verticalCenter
-            }
-          }
+          Column {
+            id: headerCol
+            width: parent.width
+            leftPadding: Style.space(16)
+            rightPadding: Style.space(16)
+            topPadding: Style.space(14)
+            bottomPadding: Style.space(12)
+            spacing: Style.space(10)
 
-          Flow {
-            width: parent.width - Style.space(28)
-            spacing: Style.space(6)
-            visible: root.page === "inbox"
-            Repeater {
-              model: root.devices
-              BorderSurface {
-                required property var modelData
-                height: Style.space(22)
-                implicitWidth: chipLabel.implicitWidth + Style.space(16)
-                radius: height / 2
-                color: modelData.connected ? root.selectedFill : "transparent"
-                borderSpec: Border.controlSpec(modelData.connected ? "selected" : "normal", root.fg, root.accent)
+            Item {
+              width: parent.width - Style.space(32)
+              height: Math.max(heroTitle.implicitHeight + heroMeta.implicitHeight + Style.space(2), phoneName.implicitHeight)
 
-                Row {
-                  id: chipLabel
-                  anchors.centerIn: parent
-                  spacing: Style.space(6)
-                  Rectangle {
-                    width: 7
-                    height: 7
-                    radius: 4
-                    anchors.verticalCenter: parent.verticalCenter
-                    color: modelData.connected ? root.accent : root.muted
-                  }
-                  Text {
-                    text: modelData.name
-                    color: modelData.connected ? root.fg : root.muted
-                    font.family: root.fontFamily
-                    font.pixelSize: Style.font.caption
-                  }
-                }
-              }
-            }
-            Text {
-              visible: root.devices.length === 0
-              text: root.cliOk ? "No Bluetooth devices yet" : "tether CLI not running"
-              color: root.muted
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.caption
-            }
-          }
+              Column {
+                anchors.left: parent.left
+                anchors.right: phoneName.left
+                anchors.rightMargin: Style.space(8)
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: Style.space(2)
 
-          Flow {
-            width: parent.width - Style.space(28)
-            spacing: Style.space(6)
-            visible: root.page === "inbox"
-            Repeater {
-              model: Model.profileBits({
-                map: root.status && root.status.map,
-                pbap: root.status && root.status.pbap,
-                ancs: root.status && root.status.ancs,
-                wifi: root.wifiUp
-              })
-              BorderSurface {
-                required property var modelData
-                height: Style.space(18)
-                implicitWidth: bitLabel.implicitWidth + Style.space(12)
-                radius: height / 2
-                color: modelData.on ? root.selectedFill : "transparent"
-                borderSpec: Border.controlSpec(modelData.on ? "selected" : "normal", root.fg, root.accent)
                 Text {
-                  id: bitLabel
-                  anchors.centerIn: parent
-                  text: modelData.label
-                  color: modelData.on ? root.fg : root.muted
+                  id: heroTitle
+                  width: parent.width
+                  textFormat: Text.PlainText
+                  text: root.page === "thread" && root.selectedThread
+                    ? root.selectedThread.name
+                    : (root.page === "notice" ? "Notification" : "Omamessage")
+                  color: root.fg
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.title
+                  font.bold: true
+                  elide: Text.ElideRight
+                }
+                Text {
+                  id: heroMeta
+                  visible: root.page === "inbox"
+                  width: parent.width
+                  textFormat: Text.PlainText
+                  text: Model.heroStatus(root.status)
+                  color: root.muted
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.caption
+                  font.bold: true
+                  font.letterSpacing: 1.2
+                  elide: Text.ElideRight
                 }
               }
-            }
-          }
 
-          Text {
-            visible: root.page === "inbox" && !!(root.status && root.status.note)
-            width: parent.width - Style.space(28)
-            wrapMode: Text.WordWrap
-            text: root.status && root.status.note ? root.status.note : ""
-            color: root.muted
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
-          }
-
-          Text {
-            visible: root.page === "inbox" && !root.wifiUp
-            width: parent.width - Style.space(28)
-            wrapMode: Text.WordWrap
-            text: "Wi-Fi is off — clipboard, files, and iOS pairing stay disabled. Bluetooth messages still work."
-            color: root.muted
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
-          }
-          Flow {
-            visible: root.page === "inbox"
-            width: parent.width - Style.space(28)
-            spacing: Style.space(6)
-            Repeater {
-              model: root.tabs
-              Button {
-                required property var modelData
-                text: modelData.label
-                selected: root.tab === modelData.id
-                foreground: root.fg
-                accent: root.accent
-                fontFamily: root.fontFamily
-                fontSize: Style.font.bodySmall
-                onClicked: {
-                  if (!hw) return
-                  if (hw.page !== "inbox") hw.showInbox()
-                  hw.tab = modelData.id
-                  if (modelData.id === "settings" && hw.loadSettings)
-                    hw.loadSettings()
+              Text {
+                id: phoneName
+                visible: root.page === "inbox" && !!(Model.firstPhone(root.devices))
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                textFormat: Text.PlainText
+                text: {
+                  var p = Model.firstPhone(root.devices)
+                  return p ? p.name : ""
                 }
+                color: root.muted
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+            }
+
+            ButtonGroup {
+              visible: root.page === "inbox"
+              width: parent.width - Style.space(32)
+              options: root.tabs
+              value: root.tab
+              foreground: root.fg
+              background: "transparent"
+              accent: root.accent
+              fontFamily: root.fontFamily
+              fontSize: Style.font.bodySmall
+              focusable: false
+              onChanged: function(v) {
+                if (!hw) return
+                if (hw.page !== "inbox") hw.showInbox()
+                hw.tab = v
+                if (v === "settings" && hw.loadSettings)
+                  hw.loadSettings()
               }
             }
           }
@@ -268,10 +211,10 @@ Panel {
 
         // ---- inbox: messages ----
         ListView {
-        id: threadList
-        visible: root.page === "inbox" && root.tab === "messages"
-        width: parent.width
-        height: Style.space(280)
+          id: threadList
+          visible: root.page === "inbox" && root.tab === "messages"
+          width: parent.width
+          height: Style.space(340)
           clip: true
           boundsBehavior: Flickable.StopAtBounds
           spacing: 0
@@ -280,48 +223,37 @@ Panel {
           delegate: Item {
             required property var modelData
             width: threadList.width
-            height: Style.space(56)
+            height: Style.space(52)
 
             Rectangle {
               anchors.fill: parent
               color: rowHover.containsMouse ? root.hoverFill : "transparent"
             }
 
-            Row {
+            Item {
               anchors.fill: parent
-              anchors.leftMargin: Style.space(14)
-              anchors.rightMargin: Style.space(14)
-              spacing: Style.space(10)
-
-              Rectangle {
-                width: Style.space(32)
-                height: Style.space(32)
-                radius: width / 2
-                anchors.verticalCenter: parent.verticalCenter
-                color: root.hoverFill
-                Text {
-                  anchors.centerIn: parent
-                  text: Model.initials(modelData.name)
-                  color: root.fg
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.caption
-                }
-              }
+              anchors.leftMargin: Style.space(16)
+              anchors.rightMargin: Style.space(16)
 
               Column {
-                width: parent.width - Style.space(90)
+                anchors.left: parent.left
+                anchors.right: threadMeta.left
+                anchors.rightMargin: Style.space(12)
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 2
                 Text {
                   width: parent.width
+                  textFormat: Text.PlainText
                   text: modelData.name
                   elide: Text.ElideRight
                   color: root.fg
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.body
+                  font.bold: !!(modelData.unread && modelData.unread > 0)
                 }
                 Text {
                   width: parent.width
+                  textFormat: Text.PlainText
                   text: modelData.preview
                   elide: Text.ElideRight
                   color: root.muted
@@ -331,22 +263,25 @@ Panel {
               }
 
               Column {
+                id: threadMeta
+                anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
-                spacing: 2
+                spacing: 4
                 Text {
                   anchors.right: parent.right
-                  text: String(modelData.time).slice(11)
+                  textFormat: Text.PlainText
+                  text: Model.threadTime(modelData.time)
                   color: root.muted
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.caption
                 }
-                Text {
+                Rectangle {
                   visible: !!(modelData.unread && modelData.unread > 0)
                   anchors.right: parent.right
-                  text: modelData.unread ? String(modelData.unread) : ""
+                  width: 6
+                  height: 6
+                  radius: 3
                   color: root.accent
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.caption
                 }
               }
             }
@@ -363,6 +298,7 @@ Panel {
           Text {
             visible: root.threads.length === 0
             anchors.centerIn: parent
+            textFormat: Text.PlainText
             text: root.status && root.status.map ? "No conversations yet" : "Messages not connected"
             color: root.muted
             font.family: root.fontFamily
@@ -370,61 +306,53 @@ Panel {
           }
         }
 
-        Rectangle {
-        visible: root.page === "inbox" && root.tab === "messages"
-        width: parent.width
-        height: Style.space(92)
-        color: root.normalFill
+        Item {
+          visible: root.page === "inbox" && root.tab === "messages"
+          width: parent.width
+          height: Style.space(56)
 
-          Column {
+          Row {
             anchors.fill: parent
-            anchors.margins: Style.space(10)
-            spacing: Style.space(6)
+            anchors.leftMargin: Style.space(12)
+            anchors.rightMargin: Style.space(12)
+            anchors.topMargin: Style.space(8)
+            anchors.bottomMargin: Style.space(8)
+            spacing: Style.space(8)
 
-            Text {
-              text: "New message"
-              color: root.muted
+            TextField {
+              id: newTo
+              width: Style.space(110)
+              anchors.verticalCenter: parent.verticalCenter
+              placeholderText: "To"
               font.family: root.fontFamily
-              font.pixelSize: Style.font.caption
+              font.pixelSize: Style.font.bodySmall
+              foreground: root.fg
+              accent: root.accent
             }
 
-            Row {
-              width: parent.width
-              spacing: Style.space(8)
+            TextField {
+              id: newBody
+              width: parent.width - newTo.width - newSend.width - Style.space(16)
+              anchors.verticalCenter: parent.verticalCenter
+              placeholderText: "New message"
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+              foreground: root.fg
+              accent: root.accent
+              onAccepted: root.sendNew()
+            }
 
-              TextField {
-                id: newTo
-                width: Math.round(parent.width * 0.34)
-                placeholderText: "Number or email"
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.bodySmall
-                foreground: root.fg
-                accent: root.accent
-              }
-
-              TextField {
-                id: newBody
-                width: parent.width - newTo.width - newSend.width - Style.space(16)
-                placeholderText: "Type a new message"
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.bodySmall
-                foreground: root.fg
-                accent: root.accent
-                onAccepted: root.sendNew()
-              }
-
-              Button {
-                id: newSend
-                text: "Send"
-                bordered: true
-                foreground: root.fg
-                accent: root.accent
-                fontFamily: root.fontFamily
-                fontSize: Style.font.bodySmall
-                anchors.verticalCenter: parent.verticalCenter
-                enabled: newTo.text.trim().length > 0 && newBody.text.trim().length > 0
-                onClicked: root.sendNew()
-              }
+            Button {
+              id: newSend
+              text: "Send"
+              bordered: true
+              foreground: root.fg
+              accent: root.accent
+              fontFamily: root.fontFamily
+              fontSize: Style.font.bodySmall
+              anchors.verticalCenter: parent.verticalCenter
+              enabled: newTo.text.trim().length > 0 && newBody.text.trim().length > 0
+              onClicked: root.sendNew()
             }
           }
         }
@@ -1137,22 +1065,24 @@ Panel {
 
         Item {
           width: parent.width
-          height: Style.space(36)
+          height: Style.space(32)
           Text {
             anchors.left: parent.left
-            anchors.leftMargin: Style.space(14)
+            anchors.leftMargin: Style.space(16)
             anchors.verticalCenter: parent.verticalCenter
-            text: "Zack Bartel · github.com/zackb/tether"
+            textFormat: Text.PlainText
+            text: "Tether by Zack Bartel"
             color: root.muted
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
           }
           Text {
             anchors.right: parent.right
-            anchors.rightMargin: Style.space(14)
+            anchors.rightMargin: Style.space(16)
             anchors.verticalCenter: parent.verticalCenter
+            textFormat: Text.PlainText
             text: "Open app"
-            color: root.accent
+            color: root.muted
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
             MouseArea {

@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.3] — 2026-09-02
+
+- Quieter inbox: hero + one status line, phone name, no device/status chip soup
+- Conversation rows without initials; unread is a small dot
+- Compose is a single row like a reply field
+
 ## [0.3.2] — 2026-09-02
 
 - Restore plugin id `io.github.charleschao.omamessage`

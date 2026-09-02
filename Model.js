@@ -178,6 +178,16 @@ function statusTitle(status) {
   return "Not connected"
 }
 
+function heroStatus(status) {
+  return statusTitle(status).toUpperCase()
+}
+
+function threadTime(value) {
+  var s = String(value || "")
+  if (s.length >= 16) return s.slice(11, 16)
+  return s
+}
+
 function deviceSubtitle(dev) {
   if (!dev) return ""
   var bits = []
