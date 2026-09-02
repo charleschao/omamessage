@@ -16,6 +16,7 @@ Panel {
   readonly property var status: hw ? hw.status : ({})
   readonly property var devices: hw && hw.devices ? hw.devices : []
   readonly property var threads: hw && hw.threads ? hw.threads : []
+  readonly property var unreadSeen: hw && hw.unreadSeen ? hw.unreadSeen : ({})
   readonly property var notifications: hw && hw.notifications ? hw.notifications : []
   readonly property var messages: hw && hw.messages ? hw.messages : []
   readonly property string page: hw ? hw.page : "inbox"
@@ -51,6 +52,16 @@ Panel {
   readonly property color normalFill: Style.normalFillFor(root.fg, root.accent)
   readonly property int paneWidth: Style.space(420)
   readonly property int listHeight: Style.space(360)
+
+  function threadHasUnread(thread) {
+    if (!thread) return false
+    var n = thread.unread || 0
+    if (n <= 0) return false
+    var w = 0
+    if (thread.handle && root.unreadSeen && root.unreadSeen[thread.handle] !== undefined)
+      w = root.unreadSeen[thread.handle]
+    return n > w
+  }
 
   function sendNew() {
     if (!hw) return
@@ -253,7 +264,7 @@ Panel {
                   color: root.fg
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.body
-                  font.bold: !!(modelData.unread && modelData.unread > 0)
+                  font.bold: root.threadHasUnread(modelData)
                 }
                 Text {
                   width: parent.width
@@ -280,7 +291,7 @@ Panel {
                   font.pixelSize: Style.font.caption
                 }
                 Rectangle {
-                  visible: !!(modelData.unread && modelData.unread > 0)
+                  visible: root.threadHasUnread(modelData)
                   anchors.right: parent.right
                   width: 6
                   height: 6

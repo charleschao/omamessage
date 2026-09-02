@@ -13,6 +13,7 @@ BarWidget {
   property var status: ({ present: false, map: false, pbap: false, ancs: false, bredr: false, le: false, note: "", raw: "" })
   property var devices: []
   property var threads: []
+  property var unreadSeen: ({})
   property var notifications: []
   property var messages: []
   property bool cliOk: false
@@ -133,6 +134,16 @@ BarWidget {
     root.page = "thread"
     root.tab = "messages"
     root.replyDraft = ""
+    if (thread.handle) {
+      var seen = {}
+      var old = root.unreadSeen || {}
+      for (var k in old) seen[k] = old[k]
+      var n = thread.unread || 0
+      if (old[thread.handle] !== undefined && old[thread.handle] > n)
+        n = old[thread.handle]
+      seen[thread.handle] = n
+      root.unreadSeen = seen
+    }
     root.loadMessages(thread.handle)
     if (panelLoader.item && !root.opened) panelLoader.item.open()
   }
