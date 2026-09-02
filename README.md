@@ -6,8 +6,6 @@ Omarchy bar inbox for iPhone SMS, iMessage, notifications, clipboard, and files 
 
 The popout follows the Omarchy light or dark theme (`omarchy theme set`).
 
-Plugin id: `io.github.charleschao.omamessage`
-
 ## Required: install Tether first
 
 Arch:
@@ -31,7 +29,7 @@ After Tether works on the machine:
 
 ```sh
 omarchy plugin add https://github.com/charleschao/omamessage.git --enable
-omarchy bar move io.github.charleschao.omamessage --section right
+omarchy bar move omamessage --section right
 ```
 
 Validate a local checkout:
@@ -43,7 +41,7 @@ omarchy plugin validate .
 ## Remove
 
 ```sh
-omarchy plugin remove io.github.charleschao.omamessage
+omarchy plugin remove omamessage
 ```
 
 Removing the bar widget does not stop Messages if `tetherd` / `tether-gtk` still talk to the phone.

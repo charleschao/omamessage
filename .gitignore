@@ -17,3 +17,8 @@
 *.pem
 known_hosts.json
 tetherd.log
+
+# Local AI tool contracts — not part of the public plugin
+.hermes.md
+AGENTS.md
+CLAUDE.md

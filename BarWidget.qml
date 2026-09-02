@@ -8,7 +8,7 @@ import "Model.js" as Model
 // Omarchy bar widget for Tether by Zack Bartel — https://github.com/zackb/tether
 BarWidget {
   id: root
-  moduleName: "io.github.charleschao.omamessage"
+  moduleName: "omamessage"
 
   property var status: ({ present: false, map: false, pbap: false, ancs: false, bredr: false, le: false, note: "", raw: "" })
   property var devices: []
@@ -502,7 +502,7 @@ BarWidget {
   }
 
   IpcHandler {
-    target: "io.github.charleschao.omamessage"
+    target: "omamessage"
     function refresh(): void { root.refresh() }
     function open(): void { root.open() }
     function close(): void { root.close() }

@@ -6,7 +6,7 @@ import "Model.js" as Model
 // Inbox popout. Messaging is Tether by Zack Bartel: https://github.com/zackb/tether
 Panel {
   id: root
-  moduleName: "io.github.charleschao.omamessage"
+  moduleName: "omamessage"
   manageIpc: false
 
   property var anchorItem: null
