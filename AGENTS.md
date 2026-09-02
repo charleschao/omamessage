@@ -43,6 +43,7 @@ Do not rename to omaimessage (sounds like Apple iMessage) or omatext (sounds SMS
 - `kinds` is only `["bar-widget"]`. Panel is loaded from BarWidget. Do not add a `panel` kind.
 - Nested Panel: `manageIpc: false`. Only BarWidget registers `IpcHandler`.
 - Link tab is **always visible**. When Wi-Fi is off, disable clipboard/files/iOS actions — do not hide the tab.
+- Settings tab is **always visible**. Bluetooth toggles, pair/unpair, and iOS accept live there.
 - Do not add OTP, Firefox, or Thunderbird add-ons. Those stay in Tether.
 - No `omarchy.*` plugin id. No symlinks in the plugin folder (marketplace rejects them).
 - `installation.mode` stays `"manual"` until Tether is no longer a required native binary.
@@ -65,8 +66,8 @@ Follow Omarchy light/dark (`omarchy theme set`).
 
 Parsers live in `Model.js`. BarWidget `Process` objects call:
 
-- `tether --bt-connection` `--bt-devices` `--bt-threads` `--bt-messages` `--bt-send` `--bt-notifications` `--bt-solicit` `--bt-pair`
-- `tether --list-devices` `-g` `-s` `-f` (Link tab; disable when Wi-Fi is off)
+- `tether --bt-connection` `--bt-devices` `--bt-threads` `--bt-messages` `--bt-send` `--bt-notifications` `--bt-solicit` `--bt-pair` `--bt-unpair` `--bt-enable` `--bt-ancs` `--bt-ancs-content` `--bt-status` `--bt-setup` `--bt-diagnostics`
+- `tether --list-devices` `-g` `-s` `-f` `--accept` (Link / Settings; disable Wi-Fi actions when Wi-Fi is off)
 - `nmcli -t -f DEVICE,TYPE,STATE device`
 - `tether-gtk` via `uwsm-app -- tether-gtk` (middle-click / Open app)
 

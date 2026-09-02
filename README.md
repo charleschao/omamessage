@@ -1,8 +1,10 @@
 # Omamessage
 
-Omarchy bar inbox for [Tether](https://github.com/zackb/tether) by **Zack Bartel**.
+Omarchy bar inbox for iPhone SMS, iMessage, notifications, clipboard, and files — driven by [Tether](https://github.com/zackb/tether) by **Zack Bartel**.
 
-**Requires Tether installed separately.** Omamessage is not Apple iMessage, not a standalone messenger, and does not bundle `tetherd`, `tether-gtk`, or the iOS app. If `tether` is missing from `PATH`, the widget has nothing to show.
+**Requires Tether by Zack Bartel installed separately.** Omamessage is not Apple iMessage, not a Tether fork, and not a standalone messenger. It does not bundle `tetherd`, `tether-gtk`, or the iOS app. If `tether` is missing from `PATH`, the widget has nothing to show.
+
+The popout follows the Omarchy light or dark theme (`omarchy theme set`).
 
 Plugin id: `io.github.charleschao.omamessage`
 
@@ -46,16 +48,26 @@ omarchy plugin remove io.github.charleschao.omamessage
 
 Removing the bar widget does not stop Messages if `tetherd` / `tether-gtk` still talk to the phone.
 
+## Requirements
+
+- [Omarchy](https://omarchy.org/) with the Quattro shell
+- [Tether](https://github.com/zackb/tether) by **Zack Bartel** (`tether` + `tetherd` on `PATH`; Arch: `tether-bin` or `tether`)
+- An iPhone paired over Bluetooth with **Show Message Notifications** and **Sync Contacts** enabled
+- Optional: Tether iOS app on the same Wi-Fi LAN for clipboard and file transfer
+- `tetherd` must stay running (holds the Bluetooth MAP session)
+
 ## Features
 
-- Device chips (BlueZ / Tether)
-- Messages tab: conversation list, click to open a transcript, Send
-- New message composer on the inbox
-- Notifications tab: mirrored ANCS (needs Bluetooth LE)
-- Link tab (always visible): Bluetooth pair, iOS app status, clipboard pull/push, file drop + Send, recent `~/Downloads`
+- Device chips and Messages / Contacts / Notify / Wi-Fi status
+- Messages: conversation list (unread counts), transcript, reply, new message
+- Notifications: mirrored ANCS (needs Bluetooth LE); re-advertise permissions
+- Link (always visible): Bluetooth pair, iOS app status, clipboard pull/push, file drop + Send, recent `~/Downloads`
+- Settings: MAP / notification toggles, pair / explicit-pair / unpair, accept iOS fingerprint, `tether --bt-setup` remaining steps
 - Middle-click the bar label, or footer **Open app**: `tether-gtk`
 
-Clipboard, files, and iOS pairing **disable while this PC’s Wi-Fi is off**. Bluetooth messages still work. OTP / browser / mail add-ons stay in Tether, not this bar.
+Clipboard, files, and iOS pairing **disable while this PC’s Wi-Fi is off**. Bluetooth messages still work.
+
+Not in this bar (they stay in Tether): OTP / TOTP vault, Firefox and Thunderbird add-ons, native-messaging host.
 
 Car-kit limits (groups, tapbacks, attachments, no blue/green bubbles) are Tether/iOS MAP, not this UI.
 

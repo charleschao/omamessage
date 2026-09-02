@@ -11,9 +11,11 @@ It is a bar/inbox UI that shells out to:
 - `tether --bt-send`
 - `tether --bt-notifications`
 - `tether --bt-solicit`
-- `tether --bt-pair`
+- `tether --bt-pair` / `--bt-unpair` / `--explicit-pair`
+- `tether --bt-enable` `--bt-ancs` `--bt-ancs-content`
+- `tether --bt-status` `--bt-setup` `--bt-diagnostics`
 - `tether-gtk` (middle-click / Open app)
-- `tether --list-devices`, `-g`, `-s`, `-f` — Link tab (disabled while this PC’s Wi-Fi is off)
+- `tether --list-devices`, `-g`, `-s`, `-f`, `--accept` — Link / Settings (disabled while this PC’s Wi-Fi is off)
 
 OTP / browser / mail add-ons stay in Tether (Firefox / Thunderbird). They are not installed by this plugin.
 

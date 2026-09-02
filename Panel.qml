@@ -27,11 +27,17 @@ Panel {
   readonly property var lanDevices: hw && hw.lanDevices ? hw.lanDevices : []
   readonly property string clipPreview: hw ? hw.clipPreview : ""
   readonly property var recentDownloads: hw && hw.recentDownloads ? hw.recentDownloads : []
+  readonly property var btFlags: hw && hw.btFlags ? hw.btFlags : ({ enabled: false, ancs: false, ancsContent: true })
+  readonly property var btStatus: hw && hw.btStatus ? hw.btStatus : ({})
+  readonly property var btSetup: hw && hw.btSetup ? hw.btSetup : ({ complete: true, text: "" })
+  readonly property string actionNote: hw ? hw.actionNote : ""
   readonly property var tabs: [
     { id: "messages", label: "Messages" },
     { id: "notifications", label: "Notifications" },
-    { id: "link", label: "Link" }
+    { id: "link", label: "Link" },
+    { id: "settings", label: "Settings" }
   ]
+  property bool unpairOpen: false
 
   readonly property color fg: bar ? bar.foreground : Color.popups.text
   readonly property color muted: Color.muted
@@ -66,6 +72,11 @@ Panel {
       root.open()
     }
   }
+  function switchPanel(direction) {
+    if (root.bar && typeof root.bar.switchPanelFrom === "function")
+      return root.bar.switchPanelFrom(root.barIdentity, direction)
+    return false
+  }
 
   Connections {
     target: hw
@@ -84,13 +95,17 @@ Panel {
     centerOnBar: true
     focusTarget: keyCatcher
     contentWidth: panel.fittedContentWidth(root.paneWidth)
-    contentHeight: panel.fittedContentHeight(Style.space(560))
+    contentHeight: panel.fittedContentHeight(Style.space(600))
 
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
-      blocked: replyField.activeFocus || newTo.activeFocus || newBody.activeFocus || fileField.activeFocus || clipField.activeFocus
+      blocked: replyField.activeFocus || newTo.activeFocus || newBody.activeFocus || fileField.activeFocus || clipField.activeFocus || acceptField.activeFocus
       onCloseRequested: {
+        if (root.unpairOpen) {
+          root.unpairOpen = false
+          return
+        }
         if (root.page !== "inbox" && hw) hw.showInbox()
         else root.close()
       }
@@ -174,6 +189,46 @@ Panel {
             }
           }
 
+          Flow {
+            width: parent.width - Style.space(28)
+            spacing: Style.space(6)
+            visible: root.page === "inbox"
+            Repeater {
+              model: Model.profileBits({
+                map: root.status && root.status.map,
+                pbap: root.status && root.status.pbap,
+                ancs: root.status && root.status.ancs,
+                wifi: root.wifiUp
+              })
+              BorderSurface {
+                required property var modelData
+                height: Style.space(18)
+                implicitWidth: bitLabel.implicitWidth + Style.space(12)
+                radius: height / 2
+                color: modelData.on ? root.selectedFill : "transparent"
+                borderSpec: Border.controlSpec(modelData.on ? "selected" : "normal", root.fg, root.accent)
+                Text {
+                  id: bitLabel
+                  anchors.centerIn: parent
+                  text: modelData.label
+                  color: modelData.on ? root.fg : root.muted
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                }
+              }
+            }
+          }
+
+          Text {
+            visible: root.page === "inbox" && !!(root.status && root.status.note)
+            width: parent.width - Style.space(28)
+            wrapMode: Text.WordWrap
+            text: root.status && root.status.note ? root.status.note : ""
+            color: root.muted
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+          }
+
           Text {
             visible: root.page === "inbox" && !root.wifiUp
             width: parent.width - Style.space(28)
@@ -183,8 +238,9 @@ Panel {
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
           }
-          Row {
+          Flow {
             visible: root.page === "inbox"
+            width: parent.width - Style.space(28)
             spacing: Style.space(6)
             Repeater {
               model: root.tabs
@@ -198,9 +254,10 @@ Panel {
                 fontSize: Style.font.bodySmall
                 onClicked: {
                   if (!hw) return
-                  hw.tab = modelData.id
                   if (hw.page !== "inbox") hw.showInbox()
                   hw.tab = modelData.id
+                  if (modelData.id === "settings" && hw.loadSettings)
+                    hw.loadSettings()
                 }
               }
             }
@@ -273,12 +330,24 @@ Panel {
                 }
               }
 
-              Text {
+              Column {
                 anchors.verticalCenter: parent.verticalCenter
-                text: String(modelData.time).slice(11)
-                color: root.muted
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.caption
+                spacing: 2
+                Text {
+                  anchors.right: parent.right
+                  text: String(modelData.time).slice(11)
+                  color: root.muted
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                }
+                Text {
+                  visible: !!(modelData.unread && modelData.unread > 0)
+                  anchors.right: parent.right
+                  text: modelData.unread ? String(modelData.unread) : ""
+                  color: root.accent
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                }
               }
             }
 
@@ -669,6 +738,233 @@ Panel {
           }
         }
 
+        Flickable {
+          visible: root.page === "inbox" && root.tab === "settings"
+          width: parent.width
+          height: Style.space(360)
+          clip: true
+          contentWidth: width
+          contentHeight: settingsCol.implicitHeight
+          boundsBehavior: Flickable.StopAtBounds
+
+          Column {
+            id: settingsCol
+            width: parent.width
+            leftPadding: Style.space(14)
+            rightPadding: Style.space(14)
+            topPadding: Style.space(10)
+            spacing: Style.space(8)
+
+            Text {
+              width: parent.width - Style.space(28)
+              wrapMode: Text.WordWrap
+              text: "Tether by Zack Bartel — this bar only calls the local CLI. OTP, Firefox, and Thunderbird stay in Tether."
+              color: root.muted
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+            }
+
+            Text {
+              visible: root.actionNote !== ""
+              width: parent.width - Style.space(28)
+              wrapMode: Text.WordWrap
+              text: root.actionNote
+              color: root.fg
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+            }
+
+            Text {
+              text: "BLUETOOTH"
+              color: root.muted
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              font.letterSpacing: 1
+            }
+            Text {
+              width: parent.width - Style.space(28)
+              wrapMode: Text.WordWrap
+              text: "Toggles are Tether settings. The chips above are the live link (Notify needs Bluetooth LE)."
+              color: root.muted
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+            }
+
+            Text {
+              width: parent.width - Style.space(28)
+              wrapMode: Text.WordWrap
+              text: {
+                var parts = []
+                if (root.btStatus && root.btStatus.mode) parts.push("Mode " + root.btStatus.mode)
+                if (root.btStatus && root.btStatus.bond) parts.push("bond " + root.btStatus.bond)
+                if (root.btStatus && root.btStatus.classOk) parts.push("class ok")
+                if (root.btStatus && root.btStatus.tether) parts.push(root.btStatus.tether)
+                return parts.length ? parts.join(" · ") : "Loading adapter status…"
+              }
+              color: root.fg
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+            }
+
+            Toggle {
+              width: parent.width - Style.space(28)
+              label: "Messages (MAP)"
+              checked: root.btFlags.enabled
+              foreground: root.fg
+              accent: root.accent
+              fontFamily: root.fontFamily
+              titleSize: Style.font.bodySmall
+              onClicked: if (hw) hw.setBtFlag("enabled", !root.btFlags.enabled)
+            }
+
+            Toggle {
+              width: parent.width - Style.space(28)
+              label: "Notification mirroring"
+              checked: root.btFlags.ancs
+              foreground: root.fg
+              accent: root.accent
+              fontFamily: root.fontFamily
+              titleSize: Style.font.bodySmall
+              onClicked: if (hw) hw.setBtFlag("ancs", !root.btFlags.ancs)
+            }
+
+            Toggle {
+              width: parent.width - Style.space(28)
+              label: "Notification titles and bodies"
+              checked: root.btFlags.ancsContent
+              enabled: root.btFlags.ancs
+              foreground: root.fg
+              accent: root.accent
+              fontFamily: root.fontFamily
+              titleSize: Style.font.bodySmall
+              onClicked: if (hw) hw.setBtFlag("ancsContent", !root.btFlags.ancsContent)
+            }
+
+            Row {
+              spacing: Style.space(8)
+              Button {
+                text: "Pair iPhone"
+                bordered: true
+                foreground: root.fg
+                accent: root.accent
+                fontFamily: root.fontFamily
+                fontSize: Style.font.bodySmall
+                onClicked: {
+                  var p = Model.firstPhone(root.devices)
+                  if (hw && p) hw.pairBt(p.address, false)
+                }
+              }
+              Button {
+                text: "Explicit pair"
+                bordered: true
+                foreground: root.fg
+                accent: root.accent
+                fontFamily: root.fontFamily
+                fontSize: Style.font.bodySmall
+                onClicked: {
+                  var p = Model.firstPhone(root.devices)
+                  if (hw && p) hw.pairBt(p.address, true)
+                }
+              }
+            }
+
+            Text {
+              width: parent.width - Style.space(28)
+              wrapMode: Text.WordWrap
+              text: "Pairing shows a code on the iPhone. If no dialog appears here, use Open app (tether-gtk). Explicit pair skips connect-first; notifications may not work on that bond."
+              color: root.muted
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+            }
+
+            Row {
+              spacing: Style.space(8)
+              Button {
+                text: "Re-advertise"
+                bordered: true
+                foreground: root.fg
+                accent: root.accent
+                fontFamily: root.fontFamily
+                fontSize: Style.font.bodySmall
+                onClicked: if (hw) hw.solicit()
+              }
+              Button {
+                text: "Unpair iPhone"
+                bordered: true
+                foreground: root.fg
+                accent: root.accent
+                fontFamily: root.fontFamily
+                fontSize: Style.font.bodySmall
+                onClicked: root.unpairOpen = true
+              }
+            }
+
+            Text {
+              text: "SETUP"
+              color: root.muted
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              font.letterSpacing: 1
+            }
+            Text {
+              width: parent.width - Style.space(28)
+              wrapMode: Text.WordWrap
+              text: root.btSetup && root.btSetup.complete
+                ? "Bluetooth system setup is complete."
+                : (root.btSetup && root.btSetup.text ? root.btSetup.text : "Checking tether --bt-setup…")
+              color: root.fg
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+            }
+
+            Text {
+              text: "iOS APP (WIFI)"
+              color: root.muted
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              font.letterSpacing: 1
+            }
+            Text {
+              width: parent.width - Style.space(28)
+              wrapMode: Text.WordWrap
+              text: !root.wifiUp
+                ? "Turn Wi-Fi on this PC, then open Tether on the iPhone on the same LAN."
+                : "Paste the fingerprint from the iPhone app to accept a pending pair. Clipboard and files need this pairing."
+              color: root.fg
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+            }
+            Row {
+              visible: root.wifiUp
+              width: parent.width - Style.space(28)
+              spacing: Style.space(8)
+              TextField {
+                id: acceptField
+                width: parent.width - acceptBtn.width - Style.space(8)
+                placeholderText: "fingerprint"
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.bodySmall
+                foreground: root.fg
+                accent: root.accent
+                text: hw ? hw.acceptDraft : ""
+                onTextChanged: if (hw && text !== hw.acceptDraft) hw.acceptDraft = text
+                onAccepted: if (hw) hw.acceptPair()
+              }
+              Button {
+                id: acceptBtn
+                text: "Accept"
+                bordered: true
+                foreground: root.fg
+                accent: root.accent
+                fontFamily: root.fontFamily
+                fontSize: Style.font.bodySmall
+                enabled: acceptField.text.trim().length > 0
+                onClicked: if (hw) hw.acceptPair()
+              }
+            }
+          }
+        }
+
         // ---- thread ----
         Column {
           visible: root.page === "thread"
@@ -865,6 +1161,25 @@ Panel {
               onClicked: if (hw) hw.openApp()
             }
           }
+        }
+      }
+
+      ConfirmDialog {
+        anchors.fill: parent
+        opened: root.unpairOpen
+        z: 10
+        message: "Remove the Bluetooth bond with this iPhone? Messages will stop until you pair again."
+        confirmText: "Unpair"
+        cancelText: "Cancel"
+        background: Color.popups.background
+        foreground: root.fg
+        selectedText: root.accent
+        fontFamily: root.fontFamily
+        onCanceled: root.unpairOpen = false
+        onConfirmed: {
+          root.unpairOpen = false
+          var p = Model.firstPhone(root.devices)
+          if (hw && p) hw.unpairBt(p.address)
         }
       }
     }

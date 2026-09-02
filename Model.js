@@ -88,10 +88,19 @@ function parseThreads(text) {
     var row = line.match(/^\s+(\S.*?)\s{2,}(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\s+(.*)$/)
     if (row) {
       if (cur) out.push(cur)
+      var preview = row[3].replace(/\s+$/, "")
+      var unread = 0
+      var um = preview.match(/\s+\((\d+) unread\)\s*$/)
+      if (um) {
+        unread = parseInt(um[1], 10)
+        if (isNaN(unread)) unread = 0
+        preview = preview.slice(0, um.index).replace(/\s+$/, "")
+      }
       cur = {
         name: row[1].replace(/\s+$/, ""),
         time: row[2],
-        preview: row[3].replace(/\s+$/, ""),
+        preview: preview,
+        unread: unread,
         handle: ""
       }
     }
@@ -261,3 +270,63 @@ function initials(name) {
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
 }
+
+function parseBtStatus(text) {
+  var raw = String(text || "")
+  var mode = ""
+  var bond = ""
+  var tether = ""
+  var classOk = /class=ok/.test(raw)
+  var lines = raw.split("\n")
+  for (var i = 0; i < lines.length; i++) {
+    var t = lines[i]
+    var m = t.match(/^\s*Mode:\s*(.*)$/)
+    if (m) { mode = m[1].trim(); continue }
+    m = t.match(/^\s*Bond:\s*(.*)$/)
+    if (m) { bond = m[1].trim(); continue }
+    m = t.match(/^\s*Tether:\s*(.*)$/)
+    if (m) { tether = m[1].trim(); continue }
+  }
+  return {
+    mode: mode,
+    bond: bond,
+    tether: tether,
+    classOk: classOk,
+    raw: raw.trim()
+  }
+}
+
+function parseBtSetup(text) {
+  var raw = String(text || "").trim()
+  return {
+    complete: /nothing to do/i.test(raw),
+    text: raw
+  }
+}
+
+function parseDiagnostics(text) {
+  var raw = String(text || "")
+  var out = { enabled: false, ancs: false, ancsContent: true }
+  var start = raw.indexOf("{")
+  if (start < 0) return out
+  try {
+    var obj = JSON.parse(raw.slice(start))
+    out.enabled = obj.enabled === true
+    out.ancs = obj.ancs_enabled === true
+    out.ancsContent = obj.ancs_content_enabled !== false
+  } catch (e) {
+  }
+  return out
+}
+
+function profileBits(status) {
+  var s = status || {}
+  return [
+    { id: "map", label: "Messages", on: s.map === true },
+    { id: "pbap", label: "Contacts", on: s.pbap === true },
+    { id: "ancs", label: "Notify", on: s.ancs === true },
+    { id: "wifi", label: "Wi-Fi", on: s.wifi === true }
+  ]
+}
+
+

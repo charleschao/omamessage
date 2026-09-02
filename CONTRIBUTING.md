@@ -14,5 +14,5 @@ This is an Omarchy bar widget. Tether itself lives at https://github.com/zackb/t
 
 - Copy Tether source
 - Add OTP / browser / mail extensions
-- Hide the Link tab when Wi-Fi is off
+- Hide the Link or Settings tab when Wi-Fi is off
 - Introduce `omarchy.*` ids or symlinks

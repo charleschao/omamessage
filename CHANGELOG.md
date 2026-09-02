@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0] — 2026-09-02
+
+- Settings tab: MAP / notification toggles, pair, explicit-pair, unpair, iOS fingerprint accept, `--bt-setup` remaining steps
+- Unread counts on the conversation list; Messages / Contacts / Notify / Wi-Fi chips
+- Clipboard push uses `tether -s` (no Python helper)
+- Follows Omarchy light/dark theme tokens (`Color.muted` / `Color.accent` / `Style` fills)
+
 ## [0.2.0] — 2026-09-01
 
 - Inbox popout: device chips, Messages / Notifications / Link tabs

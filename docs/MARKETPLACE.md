@@ -10,11 +10,11 @@ Omamessage
 
 ## Short description (manifest)
 
-Requires Tether by Zack Bartel installed separately (github.com/zackb/tether). Omarchy bar inbox for iPhone SMS/iMessage via the local tetherd CLI — not a standalone messenger.
+Requires Tether by Zack Bartel installed separately (github.com/zackb/tether). Omarchy bar inbox for iPhone SMS/iMessage, notifications, clipboard, and files via the local tether CLI — not a standalone messenger.
 
 ## Longer blurb
 
-Omamessage is an Omarchy bar inbox. It is not Apple iMessage and it does not bundle Tether. Install Tether first, pair your iPhone over Bluetooth, then add this plugin. Tether is by Zack Bartel: https://github.com/zackb/tether
+Omamessage is an Omarchy bar inbox. It is not Apple iMessage and it does not bundle Tether. Install Tether first, pair your iPhone over Bluetooth, then add this plugin. It follows the Omarchy light/dark theme. Tether is by Zack Bartel: https://github.com/zackb/tether
 
 ## Tags
 

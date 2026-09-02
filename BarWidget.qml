@@ -29,6 +29,11 @@ BarWidget {
   property string clipDraft: ""
   property string filePath: ""
   property var recentDownloads: []
+  property var btFlags: ({ enabled: false, ancs: false, ancsContent: true })
+  property var btStatus: ({ mode: "", bond: "", tether: "", classOk: false, raw: "" })
+  property var btSetup: ({ complete: true, text: "" })
+  property string acceptDraft: ""
+  property string actionNote: ""
 
   readonly property string displayText: Model.barLabel(status)
   readonly property bool mapUp: status && status.map === true
@@ -80,6 +85,8 @@ BarWidget {
         root.recentDownloads = []
         root.busy = false
         root.refreshStep = 0
+        if (root.opened && root.tab === "settings")
+          root.loadSettings()
         if (root.page === "thread" && root.selectedThread && root.selectedThread.handle)
           root.loadMessages(root.selectedThread.handle)
       }
@@ -88,6 +95,8 @@ BarWidget {
     } else {
       root.busy = false
       root.refreshStep = 0
+      if (root.opened && root.tab === "settings")
+        root.loadSettings()
       if (root.page === "thread" && root.selectedThread && root.selectedThread.handle)
         root.loadMessages(root.selectedThread.handle)
     }
@@ -185,7 +194,7 @@ BarWidget {
   function pushClipboard() {
     var t = String(root.clipDraft !== "" ? root.clipDraft : root.clipPreview)
     if (!t || !root.wifiUp) return
-    pushProc.command = ["python3", "-c", "import subprocess,sys; subprocess.run(['tether','-s'], input=sys.argv[1].encode(), check=False)", t]
+    pushProc.command = ["bash", "-c", "printf '%s' \"$1\" | tether -s", "omamessage-clip", t]
     if (!pushProc.running) pushProc.running = true
   }
 
@@ -196,11 +205,53 @@ BarWidget {
     root.sendFile()
   }
 
-  function pairBt(addr) {
+  function pairBt(addr, explicit) {
     var a = String(addr || "").trim()
     if (!a) return
-    pairProc.command = ["tether", "--bt-pair", a]
+    root.actionNote = explicit ? "Pairing with explicit-pair…" : "Pairing over Bluetooth…"
+    pairProc.command = explicit
+      ? ["tether", "--bt-pair", a, "--explicit-pair"]
+      : ["tether", "--bt-pair", a]
     if (!pairProc.running) pairProc.running = true
+  }
+
+  function unpairBt(addr) {
+    var a = String(addr || "").trim()
+    if (!a) return
+    root.actionNote = "Removing Bluetooth bond…"
+    unpairProc.command = ["tether", "--bt-unpair", a]
+    if (!unpairProc.running) unpairProc.running = true
+  }
+
+  function setBtFlag(which, on) {
+    var next = {
+      enabled: root.btFlags.enabled,
+      ancs: root.btFlags.ancs,
+      ancsContent: root.btFlags.ancsContent
+    }
+    if (which === "enabled") next.enabled = on
+    else if (which === "ancs") next.ancs = on
+    else if (which === "ancsContent") next.ancsContent = on
+    else return
+    root.btFlags = next
+    var flag = which === "enabled" ? "--bt-enable" : (which === "ancs" ? "--bt-ancs" : "--bt-ancs-content")
+    root.actionNote = "Updating Tether…"
+    flagProc.command = ["tether", flag, on ? "on" : "off"]
+    if (!flagProc.running) flagProc.running = true
+  }
+
+  function acceptPair() {
+    var fp = String(root.acceptDraft || "").trim()
+    if (!fp || !root.wifiUp) return
+    root.actionNote = "Accepting iOS pairing…"
+    acceptProc.command = ["tether", "--accept", fp]
+    if (!acceptProc.running) acceptProc.running = true
+  }
+
+  function loadSettings() {
+    if (!statusProc.running) statusProc.running = true
+    if (!setupProc.running) setupProc.running = true
+    if (!diagProc.running) diagProc.running = true
   }
 
   onWifiUpChanged: {
@@ -336,13 +387,81 @@ BarWidget {
 
   Process {
     id: pushProc
-    command: ["python3", "-c", ""]
+    command: ["tether", "-s"]
+    onExited: function(code) {
+      root.actionNote = code === 0 ? "Clipboard pushed." : "Clipboard push failed. Needs Wi-Fi and the iOS app."
+    }
   }
 
   Process {
     id: pairProc
     command: ["tether", "--bt-pair", ""]
-    onExited: root.refresh()
+    onExited: function(code) {
+      root.actionNote = code === 0
+        ? "Pairing started. Confirm the code on the iPhone. Prefer Open app if no dialog appears."
+        : "Pairing failed. Open the Tether app to confirm the code, or try explicit-pair in Settings."
+      root.refresh()
+    }
+  }
+
+  Process {
+    id: unpairProc
+    command: ["tether", "--bt-unpair", ""]
+    onExited: function(code) {
+      root.actionNote = code === 0 ? "Bluetooth bond removed." : "Could not unpair."
+      root.refresh()
+    }
+  }
+
+  Process {
+    id: flagProc
+    command: ["tether", "--bt-enable", "on"]
+    onExited: function(code) {
+      root.actionNote = code === 0 ? "Tether Bluetooth setting updated." : "Could not update that Tether setting."
+      root.refresh()
+      root.loadSettings()
+    }
+  }
+
+  Process {
+    id: acceptProc
+    command: ["tether", "--accept", ""]
+    onExited: function(code) {
+      if (code === 0) {
+        root.acceptDraft = ""
+        root.actionNote = "Accepted iOS pairing."
+      } else {
+        root.actionNote = "Accept failed. Open Tether on the iPhone, then paste the fingerprint here."
+      }
+      root.refresh()
+    }
+  }
+
+  Process {
+    id: statusProc
+    command: ["tether", "--bt-status"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.btStatus = Model.parseBtStatus(text)
+    }
+  }
+
+  Process {
+    id: setupProc
+    command: ["tether", "--bt-setup"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.btSetup = Model.parseBtSetup(text)
+    }
+  }
+
+  Process {
+    id: diagProc
+    command: ["tether", "--bt-diagnostics"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.btFlags = Model.parseDiagnostics(text)
+    }
   }
 
   Process {
@@ -358,6 +477,12 @@ BarWidget {
   Process {
     id: solicitProc
     command: ["tether", "--bt-solicit"]
+    onExited: function(code) {
+      root.actionNote = code === 0
+        ? "Re-advertising. Check the iPhone Bluetooth (i) menu for Show Message Notifications and Sync Contacts."
+        : "Could not re-advertise permissions."
+      root.refresh()
+    }
   }
 
   Process {
@@ -386,6 +511,12 @@ BarWidget {
     function toggle(): void { root.togglePanel() }
     function app(): void { root.openApp() }
     function inbox(): void { root.showInbox() }
+    function settings(): void {
+      root.showInbox()
+      root.tab = "settings"
+      root.open()
+      root.loadSettings()
+    }
   }
 
   WidgetButton {
