@@ -60,7 +60,7 @@ Removing the bar widget does not stop Messages if `tetherd` / `tether-gtk` still
 - Link (always visible): Bluetooth pair, iOS app status, clipboard pull/push, file drop + Send, recent `~/Downloads`
 - Settings: MAP / notification toggles, pair / explicit-pair / unpair, accept iOS fingerprint, `tether --bt-setup` remaining steps
 - Follows the Omarchy light or dark theme (`omarchy theme set`)
-- Middle-click the bar label, or footer **Open app**: `tether-gtk`
+- Middle-click the bar label, or **Open Tether** in the footer / Link tab: `tether-gtk`
 
 Clipboard, files, and iOS pairing **disable while this PC’s Wi-Fi is off**. Bluetooth messages still work.
 

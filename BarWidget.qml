@@ -25,6 +25,7 @@ BarWidget {
   property string replyDraft: ""
   property bool wifiUp: false
   property var lanDevices: []
+  property var lanPeers: []
   property string clipPreview: ""
   property string clipDraft: ""
   property string filePath: ""
@@ -82,11 +83,14 @@ BarWidget {
         if (!lanProc.running) lanProc.running = true
       } else {
         root.lanDevices = []
+        root.lanPeers = []
         root.recentDownloads = []
         root.busy = false
         root.refreshStep = 0
         if (root.opened && root.tab === "settings")
           root.loadSettings()
+        if (root.opened && root.tab === "link")
+          root.loadLink()
         if (root.page === "thread" && root.selectedThread && root.selectedThread.handle)
           root.loadMessages(root.selectedThread.handle)
       }
@@ -97,6 +101,8 @@ BarWidget {
       root.refreshStep = 0
       if (root.opened && root.tab === "settings")
         root.loadSettings()
+      if (root.opened && root.tab === "link")
+        root.loadLink()
       if (root.page === "thread" && root.selectedThread && root.selectedThread.handle)
         root.loadMessages(root.selectedThread.handle)
     }
@@ -189,6 +195,24 @@ BarWidget {
   function pullClipboard() {
     if (!root.wifiUp) return
     if (!clipProc.running) clipProc.running = true
+  }
+
+  function loadLink() {
+    if (!root.wifiUp) {
+      root.lanPeers = []
+      return
+    }
+    if (!lanProc.running) lanProc.running = true
+    if (!discProc.running) discProc.running = true
+    root.pullClipboard()
+  }
+
+  function pairLan(peer) {
+    var t = Model.pairTarget(peer)
+    if (!t || !t.ip) return
+    root.actionNote = "Pairing with " + (peer.name || "iPhone") + "…"
+    lanPairProc.command = ["tether", "--host", String(t.ip), "--port", String(t.port), "--pair"]
+    if (!lanPairProc.running) lanPairProc.running = true
   }
 
   function pushClipboard() {
@@ -347,7 +371,7 @@ BarWidget {
     command: ["nmcli", "-t", "-f", "DEVICE,TYPE,STATE", "device"]
     stdout: StdioCollector {
       waitForEnd: true
-      onStreamFinished: root.wifiUp = Model.wifiConnected(text)
+      onStreamFinished: root.wifiUp = Model.lanConnected(text)
     }
     onExited: function(code) {
       if (code !== 0) root.wifiUp = false
@@ -362,7 +386,29 @@ BarWidget {
       waitForEnd: true
       onStreamFinished: root.lanDevices = Model.parseLanDevices(text)
     }
-    onExited: root.nextStep()
+    onExited: function() {
+      if (root.busy) root.nextStep()
+    }
+  }
+
+  Process {
+    id: discProc
+    command: ["tether", "--discover", "--timeout", "2000"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.lanPeers = Model.remoteLanPeers(Model.parseDiscover(text))
+    }
+  }
+
+  Process {
+    id: lanPairProc
+    command: ["tether", "--pair"]
+    onExited: function(code) {
+      root.actionNote = code === 0
+        ? "Pair request sent. Accept on the iPhone, then Pull clipboard."
+        : "Wi-Fi pair failed. Open Tether on the iPhone and try again."
+      root.loadLink()
+    }
   }
 
   Process {
@@ -372,7 +418,7 @@ BarWidget {
       waitForEnd: true
       onStreamFinished: {
         root.clipPreview = Model.clipPreview(text)
-        if (root.clipDraft === "") root.clipDraft = root.clipPreview
+        root.clipDraft = root.clipPreview
       }
     }
   }
@@ -389,7 +435,9 @@ BarWidget {
     id: pushProc
     command: ["tether", "-s"]
     onExited: function(code) {
-      root.actionNote = code === 0 ? "Clipboard pushed." : "Clipboard push failed. Needs Wi-Fi and the iOS app."
+      root.actionNote = code === 0
+        ? (root.lanDevices.length > 0 ? "Clipboard pushed to Tether." : "Copied on this PC. Pair the iOS app on Link to sync to the phone.")
+        : "Clipboard push failed."
     }
   }
 

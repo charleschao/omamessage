@@ -212,13 +212,64 @@ function threadByName(threads, name) {
 }
 
 function wifiConnected(text) {
+  return lanConnected(text)
+}
+
+function lanConnected(text) {
   var lines = String(text || "").split("\n")
   for (var i = 0; i < lines.length; i++) {
     var parts = lines[i].split(":")
-    if (parts.length >= 3 && parts[1] === "wifi" && parts[2] === "connected")
+    if (parts.length < 3) continue
+    var type = parts[1]
+    var state = parts[2]
+    if (type === "loopback" || type === "bt" || type === "wifi-p2p" || type === "bridge")
+      continue
+    if (state === "connected" || state.indexOf("connected") === 0)
       return true
   }
   return false
+}
+
+function parseDiscover(text) {
+  var out = []
+  var cur = null
+  var lines = String(text || "").split("\n")
+  for (var i = 0; i < lines.length; i++) {
+    var header = lines[i].match(/^\s+(\S.*?)\s+\[([^\]]+)\]\s*$/)
+    if (header) {
+      if (cur) out.push(cur)
+      cur = { name: header[1].replace(/\s+$/, ""), status: header[2].trim(), hosts: [], local: false }
+      continue
+    }
+    var host = lines[i].match(/^\s+(\S.*):(\d+)\s*$/)
+    if (host && cur) {
+      var ip = host[1]
+      var port = parseInt(host[2], 10)
+      cur.hosts.push({ ip: ip, port: port })
+      if (ip === "127.0.0.1" || ip === "::1") cur.local = true
+    }
+  }
+  if (cur) out.push(cur)
+  return out
+}
+
+function remoteLanPeers(list) {
+  var out = []
+  var rows = list || []
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i] && !rows[i].local) out.push(rows[i])
+  }
+  return out
+}
+
+function pairTarget(peer) {
+  if (!peer || !peer.hosts || !peer.hosts.length) return null
+  for (var i = 0; i < peer.hosts.length; i++) {
+    var h = peer.hosts[i]
+    if (String(h.ip).indexOf(":") >= 0) continue
+    return h
+  }
+  return peer.hosts[0]
 }
 
 function parseLanDevices(text) {

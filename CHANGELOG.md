@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.4] — 2026-09-02
+
+- Link tab discovers the iOS app on the LAN and can send a Wi-Fi pair request
+- Clipboard Pull always fills the field; Push notes when the iOS app is not paired
+- Footer and Link: **Open Tether**
+
 ## [0.3.3] — 2026-09-02
 
 - Quieter inbox: hero + one status line, phone name, no device/status chip soup
