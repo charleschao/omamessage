@@ -52,6 +52,13 @@ Panel {
   readonly property color normalFill: Style.normalFillFor(root.fg, root.accent)
   readonly property int paneWidth: Style.space(420)
   readonly property int listHeight: Style.space(360)
+  readonly property int panelBodyHeight: Style.space(540)
+  readonly property int composeHeight: Style.space(56)
+  readonly property int threadListHeight: {
+    var h = root.panelBodyHeight - headerCol.implicitHeight - root.composeHeight
+    if (h < Style.space(220)) h = Style.space(220)
+    return h
+  }
 
   function threadHasUnread(thread) {
     if (!thread) return false
@@ -108,7 +115,7 @@ Panel {
     centerOnBar: true
     focusTarget: keyCatcher
     contentWidth: panel.fittedContentWidth(root.paneWidth)
-    contentHeight: panel.fittedContentHeight(Style.space(540))
+    contentHeight: panel.fittedContentHeight(root.panelBodyHeight)
 
     PanelKeyCatcher {
       id: keyCatcher
@@ -974,7 +981,7 @@ Panel {
           ListView {
             id: msgList
             width: parent.width
-            height: Style.space(328)
+            height: root.threadListHeight
             clip: true
             spacing: Style.space(6)
             boundsBehavior: Flickable.StopAtBounds
@@ -1027,7 +1034,7 @@ Panel {
 
           Rectangle {
             width: parent.width
-            height: Style.space(56)
+            height: root.composeHeight
             color: root.normalFill
 
             Row {
@@ -1103,11 +1110,15 @@ Panel {
           }
         }
 
-        PanelSeparator { foreground: root.fg }
+        PanelSeparator {
+          visible: root.page === "inbox"
+          foreground: root.fg
+        }
 
         Item {
+          visible: root.page === "inbox"
           width: parent.width
-          height: Style.space(32)
+          height: visible ? Style.space(32) : 0
           Text {
             anchors.right: parent.right
             anchors.rightMargin: Style.space(16)
