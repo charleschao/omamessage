@@ -282,12 +282,29 @@ function parseLanDevices(text) {
     for (var key in obj) {
       if (!Object.prototype.hasOwnProperty.call(obj, key)) continue
       if (key === "command") continue
+      if (String(key).length < 16) continue
       out.push({ fingerprint: key, name: String(obj[key] || "iPhone app") })
     }
     return out
   } catch (e) {
     return []
   }
+}
+
+function parsePendingPair(text) {
+  var lines = String(text || "").split("\n")
+  var pending = null
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i]
+    var req = line.match(/\[Pairing Request Pending\] from (.+?)\. Accept by running: tether --accept ([0-9a-fA-F]+)/)
+    if (req) {
+      pending = { name: req[1], fingerprint: req[2] }
+      continue
+    }
+    if (/\[Pairing Accepted\]|\[Pairing Rejected\]/.test(line))
+      pending = null
+  }
+  return pending
 }
 
 function fileFromUrl(url) {

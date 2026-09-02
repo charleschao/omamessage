@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.5] — 2026-09-02
+
+- Link Accept uses a pending `tether --accept` fingerprint from tetherd.log (iOS app initiates Wi-Fi pairing)
+- Show pairing status on Link, not only Settings
+
 ## [0.3.4] — 2026-09-02
 
 - Link tab discovers the iOS app on the LAN and can send a Wi-Fi pair request

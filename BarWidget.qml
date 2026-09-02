@@ -26,6 +26,7 @@ BarWidget {
   property bool wifiUp: false
   property var lanDevices: []
   property var lanPeers: []
+  property var pendingPair: null
   property string clipPreview: ""
   property string clipDraft: ""
   property string filePath: ""
@@ -84,6 +85,7 @@ BarWidget {
       } else {
         root.lanDevices = []
         root.lanPeers = []
+        root.pendingPair = null
         root.recentDownloads = []
         root.busy = false
         root.refreshStep = 0
@@ -200,19 +202,28 @@ BarWidget {
   function loadLink() {
     if (!root.wifiUp) {
       root.lanPeers = []
+      root.pendingPair = null
       return
     }
     if (!lanProc.running) lanProc.running = true
     if (!discProc.running) discProc.running = true
+    if (!pairLogProc.running) pairLogProc.running = true
     root.pullClipboard()
   }
 
   function pairLan(peer) {
-    var t = Model.pairTarget(peer)
-    if (!t || !t.ip) return
-    root.actionNote = "Pairing with " + (peer.name || "iPhone") + "…"
-    lanPairProc.command = ["tether", "--host", String(t.ip), "--port", String(t.port), "--pair"]
-    if (!lanPairProc.running) lanPairProc.running = true
+    root.acceptPending()
+  }
+
+  function acceptPending() {
+    var p = root.pendingPair
+    var fp = p && p.fingerprint ? String(p.fingerprint).trim() : ""
+    if (!fp) {
+      root.actionNote = "Open Tether on the iPhone first. When it asks to pair with this PC, Accept here."
+      return
+    }
+    root.acceptDraft = fp
+    root.acceptPair()
   }
 
   function pushClipboard() {
@@ -401,13 +412,11 @@ BarWidget {
   }
 
   Process {
-    id: lanPairProc
-    command: ["tether", "--pair"]
-    onExited: function(code) {
-      root.actionNote = code === 0
-        ? "Pair request sent. Accept on the iPhone, then Pull clipboard."
-        : "Wi-Fi pair failed. Open Tether on the iPhone and try again."
-      root.loadLink()
+    id: pairLogProc
+    command: ["bash", "-lc", "tail -n 500 -- \"$HOME/.local/state/tether/tetherd.log\" 2>/dev/null"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.pendingPair = Model.parsePendingPair(text)
     }
   }
 
@@ -477,11 +486,13 @@ BarWidget {
     onExited: function(code) {
       if (code === 0) {
         root.acceptDraft = ""
+        root.pendingPair = null
         root.actionNote = "Accepted iOS pairing."
       } else {
-        root.actionNote = "Accept failed. Open Tether on the iPhone, then paste the fingerprint here."
+        root.actionNote = "Accept failed. Open Tether on the iPhone so it can ask this PC to pair."
       }
       root.refresh()
+      root.loadLink()
     }
   }
 

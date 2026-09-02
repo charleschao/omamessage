@@ -26,6 +26,7 @@ Panel {
   readonly property bool wifiUp: hw ? hw.wifiUp : false
   readonly property var lanDevices: hw && hw.lanDevices ? hw.lanDevices : []
   readonly property var lanPeers: hw && hw.lanPeers ? hw.lanPeers : []
+  readonly property var pendingPair: hw ? hw.pendingPair : null
   readonly property string clipPreview: hw ? hw.clipPreview : ""
   readonly property var recentDownloads: hw && hw.recentDownloads ? hw.recentDownloads : []
   readonly property var btFlags: hw && hw.btFlags ? hw.btFlags : ({ enabled: false, ancs: false, ancsContent: true })
@@ -526,23 +527,34 @@ Panel {
                   return "Connect this PC to the same Wi-Fi or ethernet as the iPhone."
                 if (root.lanDevices.length > 0)
                   return "Paired: " + root.lanDevices.map(function(d) { return d.name }).join(", ")
+                if (root.pendingPair && root.pendingPair.fingerprint)
+                  return "Pairing request from " + (root.pendingPair.name || "iPhone") + ". Accept, then confirm on the phone."
                 if (root.lanPeers.length > 0)
-                  return root.lanPeers[0].name + " is on the network, not paired yet. Pair, then accept on the iPhone."
-                return "Open Tether on the iPhone. This PC is advertising; the app should see it."
+                  return root.lanPeers[0].name + " is on the network. Open Tether on the iPhone and tap this PC; Accept will appear here."
+                return "Open Tether on the iPhone. This PC is advertising as omarchy; the app should see it."
               }
               color: root.fg
               font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
             }
+            Text {
+              visible: root.actionNote !== ""
+              width: parent.width - Style.space(28)
+              wrapMode: Text.WordWrap
+              text: root.actionNote
+              color: root.muted
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+            }
             Button {
-              visible: root.wifiUp && root.lanPeers.length > 0 && root.lanDevices.length === 0
-              text: "Pair iOS app"
+              visible: !!(root.pendingPair && root.pendingPair.fingerprint) && root.lanDevices.length === 0
+              text: "Accept iPhone"
               bordered: true
               foreground: root.fg
               accent: root.accent
               fontFamily: root.fontFamily
               fontSize: Style.font.bodySmall
-              onClicked: if (hw) hw.pairLan(root.lanPeers[0])
+              onClicked: if (hw) hw.acceptPending()
             }
 
             Text {
