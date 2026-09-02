@@ -29,7 +29,7 @@ After Tether works on the machine:
 
 ```sh
 omarchy plugin add https://github.com/charleschao/omamessage.git --enable
-omarchy bar move omamessage --section right
+omarchy bar move io.github.charleschao.omamessage --section right
 ```
 
 Validate a local checkout:
@@ -41,7 +41,7 @@ omarchy plugin validate .
 ## Remove
 
 ```sh
-omarchy plugin remove omamessage
+omarchy plugin remove io.github.charleschao.omamessage
 ```
 
 Removing the bar widget does not stop Messages if `tetherd` / `tether-gtk` still talk to the phone.

@@ -1,8 +1,11 @@
 # Changelog
 
+## [0.3.2] — 2026-09-02
+
+- Restore plugin id `io.github.charleschao.omamessage`
+
 ## [0.3.1] — 2026-09-02
 
-- Plugin id is `omamessage` (no personal namespace)
 - Keep `.hermes.md`, `AGENTS.md`, and `CLAUDE.md` local — they are not in the public tree
 
 ## [0.3.0] — 2026-09-02
