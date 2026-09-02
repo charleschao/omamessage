@@ -139,13 +139,17 @@ Panel {
             width: parent.width
             leftPadding: Style.space(16)
             rightPadding: Style.space(16)
-            topPadding: Style.space(14)
-            bottomPadding: Style.space(12)
-            spacing: Style.space(10)
+            topPadding: root.page === "inbox" ? Style.space(14) : Style.space(8)
+            bottomPadding: root.page === "inbox" ? Style.space(12) : Style.space(6)
+            spacing: root.page === "inbox" ? Style.space(10) : Style.space(4)
 
             Item {
               width: parent.width - Style.space(32)
-              height: Math.max(heroTitle.implicitHeight + heroMeta.implicitHeight + Style.space(2), phoneName.implicitHeight)
+              height: {
+                if (root.page === "inbox")
+                  return Math.max(heroTitle.implicitHeight + heroMeta.implicitHeight + Style.space(2), phoneName.implicitHeight)
+                return heroTitle.implicitHeight
+              }
 
               Column {
                 anchors.left: parent.left
@@ -195,6 +199,19 @@ Panel {
                 color: root.muted
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
+              }
+            }
+
+            Text {
+              visible: root.page === "thread" || root.page === "notice"
+              text: "← Inbox"
+              color: root.accent
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+              MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                onClicked: if (hw) hw.showInbox()
               }
             }
 
@@ -954,29 +971,10 @@ Panel {
           width: parent.width
           spacing: 0
 
-          Item {
-            width: parent.width
-            height: Style.space(28)
-            Text {
-              anchors.left: parent.left
-              anchors.leftMargin: Style.space(14)
-              anchors.verticalCenter: parent.verticalCenter
-              text: "← Inbox"
-              color: root.accent
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.bodySmall
-              MouseArea {
-                anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
-                onClicked: if (hw) hw.showInbox()
-              }
-            }
-          }
-
           ListView {
             id: msgList
             width: parent.width
-            height: Style.space(300)
+            height: Style.space(328)
             clip: true
             spacing: Style.space(6)
             boundsBehavior: Flickable.StopAtBounds
@@ -1079,17 +1077,6 @@ Panel {
           bottomPadding: Style.space(12)
           spacing: Style.space(8)
 
-          Text {
-            text: "← Inbox"
-            color: root.accent
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.bodySmall
-            MouseArea {
-              anchors.fill: parent
-              cursorShape: Qt.PointingHandCursor
-              onClicked: if (hw) hw.showInbox()
-            }
-          }
           Text {
             width: parent.width - Style.space(28)
             text: root.selectedNotice ? (root.selectedNotice.app || "") : ""
