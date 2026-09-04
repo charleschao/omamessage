@@ -51,13 +51,27 @@ Panel {
   readonly property color selectedFill: Style.selectedFillFor(root.fg, root.accent)
   readonly property color normalFill: Style.normalFillFor(root.fg, root.accent)
   readonly property int paneWidth: Style.space(420)
-  readonly property int listHeight: Style.space(360)
   readonly property int panelBodyHeight: Style.space(540)
-  readonly property int composeHeight: Style.space(56)
-  readonly property int threadListHeight: {
-    var h = root.panelBodyHeight - headerCol.implicitHeight - root.composeHeight
-    if (h < Style.space(220)) h = Style.space(220)
+  readonly property int composeHeight: Style.space(48)
+  readonly property int inboxFooterH: (root.page === "inbox" && root.tab === "messages") ? Style.space(28) : 0
+  readonly property int composeH: {
+    if (root.page === "thread") return root.composeHeight
+    if (root.page === "inbox" && root.tab === "messages") return root.composeHeight
+    return 0
+  }
+  readonly property int bodyListHeight: {
+    var h = root.panelBodyHeight - headerCol.implicitHeight - Style.space(2)
+    if (root.inboxFooterH > 0)
+      h -= root.inboxFooterH + Style.space(2)
+    h -= root.composeH
+    if (h < Style.space(200)) h = Style.space(200)
     return h
+  }
+
+  function lastInRun(index) {
+    var msgs = root.messages
+    if (!msgs || index < 0 || index >= msgs.length - 1) return true
+    return !!msgs[index].mine !== !!msgs[index + 1].mine
   }
 
   function threadHasUnread(thread) {
@@ -112,7 +126,7 @@ Panel {
     owner: root.barIdentity
     bar: root.bar
     open: root.opened
-    centerOnBar: true
+    centerOnBar: false
     focusTarget: keyCatcher
     contentWidth: panel.fittedContentWidth(root.paneWidth)
     contentHeight: panel.fittedContentHeight(root.panelBodyHeight)
@@ -146,80 +160,65 @@ Panel {
             width: parent.width
             leftPadding: Style.space(16)
             rightPadding: Style.space(16)
-            topPadding: root.page === "inbox" ? Style.space(14) : Style.space(8)
-            bottomPadding: root.page === "inbox" ? Style.space(12) : Style.space(6)
-            spacing: root.page === "inbox" ? Style.space(10) : Style.space(4)
+            topPadding: Style.space(10)
+            bottomPadding: Style.space(8)
+            spacing: Style.space(6)
 
             Item {
               width: parent.width - Style.space(32)
-              height: {
-                if (root.page === "inbox")
-                  return Math.max(heroTitle.implicitHeight + heroMeta.implicitHeight + Style.space(2), phoneName.implicitHeight)
-                return heroTitle.implicitHeight
-              }
+              height: heroTitle.implicitHeight
 
-              Column {
+              Text {
+                id: backLink
+                visible: root.page === "thread" || root.page === "notice"
                 anchors.left: parent.left
-                anchors.right: phoneName.left
-                anchors.rightMargin: Style.space(8)
                 anchors.verticalCenter: parent.verticalCenter
-                spacing: Style.space(2)
-
-                Text {
-                  id: heroTitle
-                  width: parent.width
-                  textFormat: Text.PlainText
-                  text: root.page === "thread" && root.selectedThread
-                    ? root.selectedThread.name
-                    : (root.page === "notice" ? "Notification" : "Omamessage")
-                  color: root.fg
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.title
-                  font.bold: true
-                  elide: Text.ElideRight
-                }
-                Text {
-                  id: heroMeta
-                  visible: root.page === "inbox"
-                  width: parent.width
-                  textFormat: Text.PlainText
-                  text: Model.heroStatus(root.status)
-                  color: root.muted
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.caption
-                  font.bold: true
-                  font.letterSpacing: 1.2
-                  elide: Text.ElideRight
+                textFormat: Text.PlainText
+                text: "←"
+                color: root.accent
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.title
+                MouseArea {
+                  anchors.fill: parent
+                  anchors.margins: -Style.space(6)
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: if (hw) hw.showInbox()
                 }
               }
 
               Text {
-                id: phoneName
-                visible: root.page === "inbox" && !!(Model.firstPhone(root.devices))
+                id: heroTitle
+                anchors.left: backLink.visible ? backLink.right : parent.left
+                anchors.leftMargin: backLink.visible ? Style.space(8) : 0
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
                 textFormat: Text.PlainText
-                text: {
-                  var p = Model.firstPhone(root.devices)
-                  return p ? p.name : ""
-                }
-                color: root.muted
+                text: root.page === "thread" && root.selectedThread
+                  ? root.selectedThread.name
+                  : (root.page === "notice" ? "Notification" : "Omamessage")
+                color: root.fg
                 font.family: root.fontFamily
-                font.pixelSize: Style.font.caption
+                font.pixelSize: Style.font.title
+                font.bold: true
+                elide: Text.ElideRight
               }
             }
 
             Text {
-              visible: root.page === "thread" || root.page === "notice"
-              text: "← Inbox"
-              color: root.accent
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.bodySmall
-              MouseArea {
-                anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
-                onClicked: if (hw) hw.showInbox()
+              id: heroMeta
+              visible: root.page === "inbox"
+              width: parent.width - Style.space(32)
+              textFormat: Text.PlainText
+              text: {
+                var line = Model.statusTitle(root.status)
+                var p = Model.firstPhone(root.devices)
+                if (p && p.name) line += " · " + p.name
+                return line
               }
+              color: root.muted
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              elide: Text.ElideRight
             }
 
             ButtonGroup {
@@ -231,7 +230,7 @@ Panel {
               background: "transparent"
               accent: root.accent
               fontFamily: root.fontFamily
-              fontSize: Style.font.bodySmall
+              fontSize: Style.font.caption
               focusable: false
               onChanged: function(v) {
                 if (!hw) return
@@ -253,7 +252,7 @@ Panel {
           id: threadList
           visible: root.page === "inbox" && root.tab === "messages"
           width: parent.width
-          height: Style.space(340)
+          height: root.bodyListHeight
           clip: true
           boundsBehavior: Flickable.StopAtBounds
           spacing: 0
@@ -348,19 +347,19 @@ Panel {
         Item {
           visible: root.page === "inbox" && root.tab === "messages"
           width: parent.width
-          height: Style.space(56)
+          height: root.composeHeight
 
           Row {
             anchors.fill: parent
             anchors.leftMargin: Style.space(12)
             anchors.rightMargin: Style.space(12)
-            anchors.topMargin: Style.space(8)
-            anchors.bottomMargin: Style.space(8)
+            anchors.topMargin: Style.space(6)
+            anchors.bottomMargin: Style.space(6)
             spacing: Style.space(8)
 
             TextField {
               id: newTo
-              width: Style.space(110)
+              width: Style.space(152)
               anchors.verticalCenter: parent.verticalCenter
               placeholderText: "To"
               font.family: root.fontFamily
@@ -398,10 +397,10 @@ Panel {
 
         // ---- inbox: notifications ----
         ListView {
-        id: noticeList
-        visible: root.page === "inbox" && root.tab === "notifications"
-        width: parent.width
-        height: Style.space(320)
+          id: noticeList
+          visible: root.page === "inbox" && root.tab === "notifications"
+          width: parent.width
+          height: root.bodyListHeight
           clip: true
           boundsBehavior: Flickable.StopAtBounds
           model: root.notifications
@@ -425,6 +424,7 @@ Panel {
               spacing: 2
               Text {
                 width: parent.width
+                textFormat: Text.PlainText
                 text: modelData.app || "Notification"
                 color: root.muted
                 font.family: root.fontFamily
@@ -433,6 +433,7 @@ Panel {
               }
               Text {
                 width: parent.width
+                textFormat: Text.PlainText
                 text: modelData.title || modelData.body
                 color: root.fg
                 font.family: root.fontFamily
@@ -461,8 +462,8 @@ Panel {
               horizontalAlignment: Text.AlignHCenter
               textFormat: Text.PlainText
               text: root.status && root.status.ancs
-                ? "No mirrored notifications yet"
-                : "Notifications need Bluetooth LE. Turn Bluetooth off and on on the iPhone — Re-advertise cannot clear a wedged phone radio."
+                ? "No notifications"
+                : "Needs Bluetooth LE"
               color: root.muted
               font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
@@ -495,7 +496,7 @@ Panel {
         Flickable {
           visible: root.page === "inbox" && root.tab === "link"
           width: parent.width
-          height: Style.space(360)
+          height: root.bodyListHeight
           clip: true
           contentWidth: width
           contentHeight: linkCol.implicitHeight
@@ -510,15 +511,7 @@ Panel {
             spacing: Style.space(10)
 
             Text {
-              width: parent.width - Style.space(28)
-              wrapMode: Text.WordWrap
-              text: "Bluetooth: messages. Wi-Fi: clipboard, files, iOS app. Tether by Zack Bartel."
-              color: root.muted
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.caption
-            }
-
-            Text {
+              textFormat: Text.PlainText
               text: "BLUETOOTH"
               color: root.muted
               font.family: root.fontFamily
@@ -528,9 +521,10 @@ Panel {
             Text {
               width: parent.width - Style.space(28)
               wrapMode: Text.WordWrap
+              textFormat: Text.PlainText
               text: {
                 var p = Model.firstPhone(root.devices)
-                if (!p) return "No iPhone on Bluetooth. Pair in tether-gtk or Settings."
+                if (!p) return "No iPhone on Bluetooth."
                 var bits = [p.name]
                 if (p.connected) bits.push("connected")
                 if (root.status && root.status.map) bits.push("messages live")
@@ -546,6 +540,7 @@ Panel {
                 var p = Model.firstPhone(root.devices)
                 return !!(p && p.address && !p.connected)
               }
+              textFormat: Text.PlainText
               text: "Pair iPhone"
               color: root.accent
               font.family: root.fontFamily
@@ -561,6 +556,7 @@ Panel {
             }
 
             Text {
+              textFormat: Text.PlainText
               text: "iOS APP"
               color: root.muted
               font.family: root.fontFamily
@@ -570,16 +566,17 @@ Panel {
             Text {
               width: parent.width - Style.space(28)
               wrapMode: Text.WordWrap
+              textFormat: Text.PlainText
               text: {
                 if (!root.wifiUp)
-                  return "Connect this PC to the same Wi-Fi or ethernet as the iPhone."
+                  return "Needs LAN."
                 if (root.lanDevices.length > 0)
                   return "Paired: " + root.lanDevices.map(function(d) { return d.name }).join(", ")
                 if (root.pendingPair && root.pendingPair.fingerprint)
-                  return "Pairing request from " + (root.pendingPair.name || "iPhone") + ". Accept, then confirm on the phone."
+                  return "Pairing request from " + (root.pendingPair.name || "iPhone") + "."
                 if (root.lanPeers.length > 0)
-                  return "iOS app is on the network. In the iPhone app, tap this PC (omarchy). Accept will appear here. tether-gtk Bluetooth pairing is only for messages, not clipboard."
-                return "Open the Tether iOS app and tap omarchy to pair clipboard and files."
+                  return "iOS app on the network. Tap this PC in the app."
+                return "Open the Tether iOS app."
               }
               color: root.fg
               font.family: root.fontFamily
@@ -589,6 +586,7 @@ Panel {
               visible: root.actionNote !== ""
               width: parent.width - Style.space(28)
               wrapMode: Text.WordWrap
+              textFormat: Text.PlainText
               text: root.actionNote
               color: root.muted
               font.family: root.fontFamily
@@ -606,23 +604,12 @@ Panel {
             }
 
             Text {
+              textFormat: Text.PlainText
               text: "CLIPBOARD"
               color: root.muted
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
               font.letterSpacing: 1
-            }
-            Text {
-              width: parent.width - Style.space(28)
-              wrapMode: Text.WordWrap
-              text: !root.wifiUp
-                ? "Needs a LAN connection."
-                : (root.lanDevices.length > 0
-                  ? "Pull this PC’s clipboard, or push text to sync it to the iOS app."
-                  : "Pull and Push work on this PC. Pair the iOS app above to sync to the phone.")
-              color: root.muted
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.caption
             }
             Row {
               visible: root.wifiUp
@@ -663,6 +650,7 @@ Panel {
             }
 
             Text {
+              textFormat: Text.PlainText
               text: "FILES"
               color: root.muted
               font.family: root.fontFamily
@@ -688,6 +676,7 @@ Panel {
                   width: parent.width - Style.space(16)
                   wrapMode: Text.WordWrap
                   horizontalAlignment: Text.AlignHCenter
+                  textFormat: Text.PlainText
                   text: "Drop files here to send to the iPhone"
                   color: root.muted
                   font.family: root.fontFamily
@@ -722,20 +711,13 @@ Panel {
                 onClicked: if (hw) hw.sendFile()
               }
             }
-            Text {
-              width: parent.width - Style.space(28)
-              wrapMode: Text.WordWrap
-              text: "Incoming files land in ~/Downloads."
-              color: root.muted
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.caption
-            }
             Repeater {
               model: root.recentDownloads
               Text {
                 required property string modelData
                 width: linkCol.width - Style.space(28)
                 elide: Text.ElideMiddle
+                textFormat: Text.PlainText
                 text: modelData
                 color: root.fg
                 font.family: root.fontFamily
@@ -748,7 +730,7 @@ Panel {
         Flickable {
           visible: root.page === "inbox" && root.tab === "settings"
           width: parent.width
-          height: Style.space(360)
+          height: root.bodyListHeight
           clip: true
           contentWidth: width
           contentHeight: settingsCol.implicitHeight
@@ -763,18 +745,10 @@ Panel {
             spacing: Style.space(8)
 
             Text {
-              width: parent.width - Style.space(28)
-              wrapMode: Text.WordWrap
-              text: "Tether by Zack Bartel — this bar only calls the local CLI. OTP, Firefox, and Thunderbird stay in Tether."
-              color: root.muted
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.caption
-            }
-
-            Text {
               visible: root.actionNote !== ""
               width: parent.width - Style.space(28)
               wrapMode: Text.WordWrap
+              textFormat: Text.PlainText
               text: root.actionNote
               color: root.fg
               font.family: root.fontFamily
@@ -782,6 +756,7 @@ Panel {
             }
 
             Text {
+              textFormat: Text.PlainText
               text: "BLUETOOTH"
               color: root.muted
               font.family: root.fontFamily
@@ -791,15 +766,7 @@ Panel {
             Text {
               width: parent.width - Style.space(28)
               wrapMode: Text.WordWrap
-              text: "Toggles are Tether settings. The hero status is the live link (Notify needs Bluetooth LE)."
-              color: root.muted
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.caption
-            }
-
-            Text {
-              width: parent.width - Style.space(28)
-              wrapMode: Text.WordWrap
+              textFormat: Text.PlainText
               text: {
                 var parts = []
                 if (root.btStatus && root.btStatus.mode) parts.push("Mode " + root.btStatus.mode)
@@ -878,7 +845,8 @@ Panel {
             Text {
               width: parent.width - Style.space(28)
               wrapMode: Text.WordWrap
-              text: "Pairing shows a code on the iPhone. If no dialog appears here, use Open Tether. Explicit pair skips connect-first; notifications may not work on that bond."
+              textFormat: Text.PlainText
+              text: "Pairing shows a code on the iPhone. Explicit pair skips connect-first."
               color: root.muted
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
@@ -907,6 +875,7 @@ Panel {
             }
 
             Text {
+              textFormat: Text.PlainText
               text: "SETUP"
               color: root.muted
               font.family: root.fontFamily
@@ -916,6 +885,7 @@ Panel {
             Text {
               width: parent.width - Style.space(28)
               wrapMode: Text.WordWrap
+              textFormat: Text.PlainText
               text: root.btSetup && root.btSetup.complete
                 ? "Bluetooth system setup is complete."
                 : (root.btSetup && root.btSetup.text ? root.btSetup.text : "Checking tether --bt-setup…")
@@ -925,6 +895,7 @@ Panel {
             }
 
             Text {
+              textFormat: Text.PlainText
               text: "iOS APP"
               color: root.muted
               font.family: root.fontFamily
@@ -934,9 +905,10 @@ Panel {
             Text {
               width: parent.width - Style.space(28)
               wrapMode: Text.WordWrap
+              textFormat: Text.PlainText
               text: !root.wifiUp
-                ? "Connect this PC to the same LAN as the iPhone (ethernet is fine)."
-                : "If Accept appears on Link, use that. Otherwise paste a pending fingerprint from tetherd.log. GTK “connected” is not the same as a pinned tetherd pair."
+                ? "Needs LAN."
+                : "Paste a pending fingerprint if Accept is not on Link."
               color: root.fg
               font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
@@ -981,17 +953,18 @@ Panel {
           ListView {
             id: msgList
             width: parent.width
-            height: root.threadListHeight
+            height: root.bodyListHeight
             clip: true
-            spacing: Style.space(6)
+            spacing: Style.space(4)
             boundsBehavior: Flickable.StopAtBounds
             model: root.messages
             onCountChanged: if (count > 0) positionViewAtEnd()
 
             delegate: Item {
               required property var modelData
+              required property int index
               width: msgList.width
-              height: bubble.implicitHeight
+              height: bubble.implicitHeight + (stamp.visible ? stamp.implicitHeight + Style.space(2) : 0)
 
               Rectangle {
                 id: bubble
@@ -1000,58 +973,62 @@ Panel {
                 anchors.leftMargin: Style.space(14)
                 anchors.rightMargin: Style.space(14)
                 width: Math.min(msgList.width * 0.78, msgBody.implicitWidth + Style.space(20))
-                implicitHeight: msgCol.implicitHeight + Style.space(12)
-                radius: 12
+                implicitHeight: msgBody.implicitHeight + Style.space(14)
+                radius: 10
                 color: modelData.mine ? root.selectedFill : root.normalFill
 
-                Column {
-                  id: msgCol
+                Text {
+                  id: msgBody
                   anchors.left: parent.left
                   anchors.right: parent.right
                   anchors.verticalCenter: parent.verticalCenter
                   anchors.leftMargin: Style.space(10)
                   anchors.rightMargin: Style.space(10)
-                  spacing: 2
-                  Text {
-                    id: msgBody
-                    width: msgList.width * 0.72
-                    text: modelData.body
-                    wrapMode: Text.Wrap
-                    color: root.fg
-                    font.family: root.fontFamily
-                    font.pixelSize: Style.font.bodySmall
-                  }
-                  Text {
-                    text: Model.threadTime(modelData.time)
-                    color: root.muted
-                    font.family: root.fontFamily
-                    font.pixelSize: Style.font.caption
-                  }
+                  width: msgList.width * 0.72
+                  textFormat: Text.PlainText
+                  text: modelData.body
+                  wrapMode: Text.Wrap
+                  color: root.fg
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.body
                 }
+              }
+
+              Text {
+                id: stamp
+                visible: root.lastInRun(index)
+                anchors.top: bubble.bottom
+                anchors.topMargin: Style.space(2)
+                anchors.left: modelData.mine ? undefined : bubble.left
+                anchors.right: modelData.mine ? bubble.right : undefined
+                textFormat: Text.PlainText
+                text: Model.threadTime(modelData.time)
+                color: root.muted
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
               }
             }
           }
 
-          Rectangle {
+          Item {
             width: parent.width
             height: root.composeHeight
-            color: root.normalFill
 
             Row {
               anchors.fill: parent
               anchors.leftMargin: Style.space(12)
               anchors.rightMargin: Style.space(12)
-              anchors.topMargin: Style.space(8)
-              anchors.bottomMargin: Style.space(8)
+              anchors.topMargin: Style.space(6)
+              anchors.bottomMargin: Style.space(6)
               spacing: Style.space(8)
 
               TextField {
                 id: replyField
                 width: parent.width - sendBtn.width - Style.space(8)
                 anchors.verticalCenter: parent.verticalCenter
-                placeholderText: "Type a message"
+                placeholderText: "Message"
                 font.family: root.fontFamily
-                font.pixelSize: Style.font.body
+                font.pixelSize: Style.font.bodySmall
                 foreground: root.fg
                 accent: root.accent
                 enabled: !!(root.selectedThread && root.selectedThread.handle)
@@ -1086,6 +1063,7 @@ Panel {
 
           Text {
             width: parent.width - Style.space(28)
+            textFormat: Text.PlainText
             text: root.selectedNotice ? (root.selectedNotice.app || "") : ""
             color: root.muted
             font.family: root.fontFamily
@@ -1094,6 +1072,7 @@ Panel {
           Text {
             width: parent.width - Style.space(28)
             wrapMode: Text.Wrap
+            textFormat: Text.PlainText
             text: root.selectedNotice ? (root.selectedNotice.title || "") : ""
             color: root.fg
             font.family: root.fontFamily
@@ -1103,6 +1082,7 @@ Panel {
             width: parent.width - Style.space(28)
             wrapMode: Text.Wrap
             visible: !!(root.selectedNotice && root.selectedNotice.body)
+            textFormat: Text.PlainText
             text: root.selectedNotice ? (root.selectedNotice.body || "") : ""
             color: root.fg
             font.family: root.fontFamily
@@ -1111,14 +1091,14 @@ Panel {
         }
 
         PanelSeparator {
-          visible: root.page === "inbox"
+          visible: root.page === "inbox" && root.tab === "messages"
           foreground: root.fg
         }
 
         Item {
-          visible: root.page === "inbox"
+          visible: root.page === "inbox" && root.tab === "messages"
           width: parent.width
-          height: visible ? Style.space(32) : 0
+          height: visible ? root.inboxFooterH : 0
           Text {
             anchors.right: parent.right
             anchors.rightMargin: Style.space(16)

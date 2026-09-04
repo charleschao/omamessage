@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.9] — 2026-09-04
+
+- Security: pin every remote-derived `Text` sink to `Text.PlainText`
+- Security: neutralize strings before qs.Ui controls (clipboard, notes, tooltip)
+- Security: wrap Tether/nmcli reads in `scripts/bounded-cmd.sh` (64 KiB stdout/stderr, TERM then KILL after 8s+2s); reject overflow (exit 125) and timeouts (124) before model insert
+- Security: cap parser input, row counts, and per-field lengths in `Model.js`
+- Quieter inbox: one status line, smaller tabs, list fills the panel
+- New-message row is lighter; To field is wider
+- Thread back sits on the title row; timestamps once per run
+- Thread compose matches the inbox (no filled bar)
+- Link and Settings drop the manuals; Notify empty is one line
+- Open Tether only on the Messages tab
+
 ## [0.3.8] — 2026-09-02
 
 - Time-only stamps on bubbles (no date)
