@@ -108,6 +108,11 @@ const contacts = M.parseContacts({
 })
 eq("contact handle", contacts[0].handle, "tel:+1555")
 eq("contact entries", contacts[0].entries.length, 2)
+const suggestions = M.flattenContactSuggestions(contacts)
+eq("suggestions count", suggestions.length, 2)
+eq("suggestion phone", suggestions[0].handle, "tel:+1555")
+eq("suggestion email", suggestions[1].handle, "email:ada@x.test")
+eq("suggestion kinds", [suggestions[0].kind, suggestions[1].kind], ["phone", "email"])
 
 if (failed) {
   console.error(failed + " failed")

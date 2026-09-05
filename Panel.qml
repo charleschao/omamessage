@@ -33,6 +33,7 @@ Panel {
   property bool cursorActive: false
 
   readonly property var visibleThreads: Model.filterThreads(root.threads, root.searchQuery)
+  readonly property var contactSuggestions: Model.flattenContactSuggestions(root.contacts)
   readonly property var transcript: Model.decorateTranscript(root.messages, Date.now() / 1000)
   readonly property bool showSetup: !root.mapUp && root.threads.length === 0
   readonly property var phone: Model.firstPhone(root.devices)
@@ -689,7 +690,7 @@ Panel {
             height: parent.height - root.composeHeight
             clip: true
             boundsBehavior: Flickable.StopAtBounds
-            model: root.contacts
+            model: root.contactSuggestions
 
             delegate: Item {
               required property var modelData
@@ -720,7 +721,7 @@ Panel {
                 Text {
                   width: parent.width
                   textFormat: Text.PlainText
-                  text: modelData.entries && modelData.entries.length ? modelData.entries[0].label : ""
+                  text: modelData.label
                   elide: Text.ElideRight
                   color: root.muted
                   font.family: root.fontFamily
@@ -733,12 +734,12 @@ Panel {
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
-                onClicked: if (hw) hw.openContactHandle(modelData, modelData.handle)
+                onClicked: if (hw) hw.openContactHandle({ name: modelData.name }, modelData.handle)
               }
             }
 
             Text {
-              visible: root.contacts.length === 0
+              visible: root.contactSuggestions.length === 0
               anchors.centerIn: parent
               textFormat: Text.PlainText
               text: root.status && root.status.pbap ? "Type a name or number" : "Contacts not connected"

@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.4.2] — 2026-09-05
+
+- New message typeahead lists every phone and email for a contact, not only the first.
+
 ## [0.4.1] — 2026-09-05
 
 - Bar uses the Nerd Font message bubble (`󰍡`) instead of the word Messages. Unread count sits beside the icon.

@@ -7,8 +7,9 @@ var MAX_DEVICES = 32
 var MAX_CALLS = 8
 var MAX_THREADS = 100
 var MAX_MESSAGES = 200
-var MAX_CONTACTS = 40
-var MAX_CONTACT_FIELDS = 8
+var MAX_CONTACTS = 100
+var MAX_CONTACT_FIELDS = 16
+var MAX_SUGGESTIONS = 80
 var MAX_NAME = 128
 var MAX_PREVIEW = 240
 var MAX_BODY = 2048
@@ -197,6 +198,45 @@ function parseContacts(obj) {
       handle: entries.length ? entries[0].handle : "",
       entries: entries
     })
+  }
+  return out
+}
+
+function addressKind(handle) {
+  var h = String(handle || "")
+  if (h.indexOf("email:") === 0 || h.indexOf("mailto:") === 0) return "email"
+  return "phone"
+}
+
+function flattenContactSuggestions(contacts) {
+  var list = contacts || []
+  var out = []
+  var n = Math.min(list.length, MAX_CONTACTS)
+  for (var i = 0; i < n && out.length < MAX_SUGGESTIONS; i++) {
+    var c = list[i]
+    if (!c) continue
+    var entries = c.entries || []
+    if (!entries.length) {
+      if (!c.handle) continue
+      out.push({
+        name: c.name || c.handle,
+        handle: c.handle,
+        label: c.handle,
+        kind: addressKind(c.handle)
+      })
+      continue
+    }
+    var k = Math.min(entries.length, MAX_CONTACT_FIELDS)
+    for (var j = 0; j < k && out.length < MAX_SUGGESTIONS; j++) {
+      var e = entries[j]
+      if (!e || !e.handle) continue
+      out.push({
+        name: c.name || e.label || e.handle,
+        handle: e.handle,
+        label: e.label || e.handle,
+        kind: addressKind(e.handle)
+      })
+    }
   }
   return out
 }
