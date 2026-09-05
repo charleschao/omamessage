@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.4.1] — 2026-09-05
+
+- Bar uses the Nerd Font message bubble (`󰍡`) instead of the word Messages. Unread count sits beside the icon.
+
 ## [0.4.0] — 2026-09-05
 
 - Inbox only: search, conversations, reply, new message. No Settings / Link / Notify / Calls / Contacts tabs.

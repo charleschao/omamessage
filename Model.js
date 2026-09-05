@@ -270,9 +270,14 @@ function unreadTotal(threads) {
   return sum
 }
 
+// nf-md-message — the SMS / iMessage speech bubble in Nerd Fonts.
+var BAR_ICON = "󰍡"
+
 function barLabel(unread, mapUp, daemonOk) {
-  if (daemonOk && mapUp && unread > 0) return String(unread)
-  return "Messages"
+  var n = parseInt(unread, 10)
+  if (isNaN(n) || n < 0) n = 0
+  if (daemonOk && mapUp && n > 0) return BAR_ICON + " " + String(n)
+  return BAR_ICON
 }
 
 function statusTitle(status, daemonOk) {

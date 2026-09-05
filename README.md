@@ -62,7 +62,7 @@ Removing the bar widget does not stop Messages if `tetherd` / `tether-gtk` still
 
 ## Features
 
-- Bar label: **Messages**, or the unread count when the phone link is up
+- Bar icon: speech bubble, with the unread count beside it when something is unread
 - Conversation list with search (`/`), unread badges, relative times
 - Transcript with day headings, grouped bubbles, clickable links
 - Reply, new message (`n`) with contact typeahead

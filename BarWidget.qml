@@ -455,7 +455,14 @@ BarWidget {
     anchors.fill: parent
     bar: root.bar
     text: root.displayText
-    tooltipText: Model.neutralizeUi(Model.statusTitle(root.status, root.daemonOk))
+    fontSize: Style.bar.iconFont
+    tooltipText: {
+      var status = Model.statusTitle(root.status, root.daemonOk)
+      if (root.mapUp && root.unreadCount > 0)
+        return Model.neutralizeUi(root.unreadCount + " unread · " + status)
+      return Model.neutralizeUi(status)
+    }
+    active: root.mapUp && root.unreadCount > 0
     dimmed: !root.mapUp
     onPressed: function(b) {
       if (b === Qt.MiddleButton) root.openApp()

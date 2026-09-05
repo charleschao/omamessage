@@ -49,9 +49,10 @@ const threads = M.parseThreads({
 eq("thread count", threads.length, 2)
 eq("thread handle", threads[0].handle, "tel:+15551212")
 eq("unread total", M.unreadTotal(threads), 3)
-eq("bar with unread", M.barLabel(3, true, true), "3")
-eq("bar idle", M.barLabel(0, true, true), "Messages")
-eq("bar down", M.barLabel(9, false, true), "Messages")
+eq("bar icon", M.BAR_ICON, "󰍡")
+eq("bar with unread", M.barLabel(3, true, true), "󰍡 3")
+eq("bar idle", M.barLabel(0, true, true), "󰍡")
+eq("bar down", M.barLabel(9, false, true), "󰍡")
 eq("filter", M.filterThreads(threads, "ada")[0].name, "Ada")
 eq("zero unread", M.zeroUnread(threads, "tel:+15551212")[0].unread, 0)
 
