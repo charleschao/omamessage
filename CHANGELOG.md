@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.11] — 2026-09-04
+
+- Settings: Bluetooth controller (`--bt-adapter`), per-device pair, copy setup commands, copy diagnostics
+- Link: outbound Wi-Fi pair (`--pair --host`) and Forget (`--forget`)
+- Link files: Browse from `~/Downloads` (picker closes the overlay first so the file sticks in the field)
+- Calls tab when Tether CLI has `--bt-calls` (dial / answer / hang up / enable)
+
+## [0.3.10] — 2026-09-04
+
+- Contacts on the inbox footer (left); Open Tether stays on the right
+- Search iPhone contacts via `tether --bt-contacts` and open a chat
+- Contacts list shows every phone and email Tether returns (postal if the CLI prints it)
+- Settings: on-disk retention (`encrypted` / `plaintext` / `none`) via `tether --bt-retention`
+
 ## [0.3.9] — 2026-09-04
 
 - Security: pin every remote-derived `Text` sink to `Text.PlainText`

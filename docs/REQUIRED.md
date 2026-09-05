@@ -8,14 +8,18 @@ It is a bar/inbox UI that shells out to:
 - `tether --bt-devices`
 - `tether --bt-threads`
 - `tether --bt-messages`
+- `tether --bt-contacts`
 - `tether --bt-send`
+- `tether --bt-retention`
 - `tether --bt-notifications`
 - `tether --bt-solicit`
 - `tether --bt-pair` / `--bt-unpair` / `--explicit-pair`
 - `tether --bt-enable` `--bt-ancs` `--bt-ancs-content`
+- `tether --bt-adapter`
 - `tether --bt-status` `--bt-setup` `--bt-diagnostics`
+- `tether --bt-calls` `--bt-call` `--bt-answer` `--bt-hangup` `--bt-calls-enable` (when the installed CLI has them)
 - `tether-gtk` (middle-click / Open Tether)
-- `tether --list-devices`, `--discover`, `-g`, `-s`, `-f`, `--accept` — Link / Settings (disabled while this PC has no LAN; ethernet counts)
+- `tether --list-devices`, `--discover`, `--pair`, `-g`, `-s`, `-f`, `--accept`, `--forget` — Link / Settings (disabled while this PC has no LAN; ethernet counts)
 
 OTP / browser / mail add-ons stay in Tether (Firefox / Thunderbird). They are not installed by this plugin.
 

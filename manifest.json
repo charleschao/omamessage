@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.charleschao.omamessage",
   "name": "Omamessage",
-  "version": "0.3.9",
+  "version": "0.3.11",
   "author": "charleschao",
   "license": "MIT",
   "description": "Requires Tether by Zack Bartel installed separately (github.com/zackb/tether). Omarchy bar widget for iPhone SMS/iMessage, notifications, clipboard, and files via the local tether CLI — not a standalone messenger.",
@@ -13,7 +13,7 @@
   },
   "barWidget": {
     "displayName": "Omamessage",
-    "description": "Requires Tether (Zack Bartel, github.com/zackb/tether) installed separately. Messages, notifications, clipboard, files, and Bluetooth settings via the local CLI.",
+    "description": "Requires Tether (Zack Bartel, github.com/zackb/tether) installed separately. Messages, contacts, notifications, clipboard, files, and Bluetooth settings via the local CLI.",
     "category": "Communication",
     "aliases": ["omamessage", "tether", "imessage", "sms", "iphone"],
     "allowMultiple": false,

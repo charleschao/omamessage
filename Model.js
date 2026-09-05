@@ -4,11 +4,15 @@
 
 var MAX_INPUT = 65536
 var MAX_DEVICES = 32
+var MAX_ADAPTERS = 8
+var MAX_CALLS = 8
 var MAX_THREADS = 100
 var MAX_MESSAGES = 200
+var MAX_CONTACTS = 300
+var MAX_CONTACT_FIELDS = 16
 var MAX_NOTICES = 100
 var MAX_LAN = 16
-var MAX_DOWNLOADS = 8
+
 var MAX_HOSTS = 8
 var MAX_NAME = 128
 var MAX_PREVIEW = 240
@@ -191,6 +195,161 @@ function parseMessages(text) {
     }
   }
   return out
+}
+
+function contactQueryArg(q) {
+  q = String(q == null ? "" : q).trim()
+  if (!q || q.charAt(0) === "-") return ""
+  return field(q, 64)
+}
+
+function pushField(list, value, maxLen) {
+  var v = field(value, maxLen)
+  if (!v) return
+  var i
+  for (i = 0; i < list.length; i++) {
+    if (list[i] === v) return
+  }
+  if (list.length < MAX_CONTACT_FIELDS) list.push(v)
+}
+
+function contactEntries(c) {
+  var out = []
+  var i
+  if (!c) return out
+  if (c.tels) {
+    for (i = 0; i < c.tels.length && out.length < MAX_CONTACT_FIELDS; i++) {
+      var tel = String(c.tels[i])
+      out.push({
+        kind: "tel",
+        label: field(tel.replace(/^tel:/, ""), MAX_HANDLE),
+        handle: field(tel.indexOf("tel:") === 0 ? tel : ("tel:" + tel), MAX_HANDLE)
+      })
+    }
+  }
+  if (c.emails) {
+    for (i = 0; i < c.emails.length && out.length < MAX_CONTACT_FIELDS; i++) {
+      var em = String(c.emails[i]).replace(/^email:/, "")
+      var mail = em.indexOf("mailto:") === 0 ? em : ("mailto:" + em)
+      out.push({
+        kind: "email",
+        label: field(mail.replace(/^mailto:/, ""), MAX_HANDLE),
+        handle: field(mail, MAX_HANDLE)
+      })
+    }
+  }
+  if (c.adrs) {
+    for (i = 0; i < c.adrs.length && out.length < MAX_CONTACT_FIELDS; i++) {
+      out.push({
+        kind: "adr",
+        label: field(c.adrs[i], MAX_PREVIEW),
+        handle: ""
+      })
+    }
+  }
+  return out
+}
+
+function finishContact(cur) {
+  var tels = cur.tels || []
+  var emails = cur.emails || []
+  var adrs = cur.adrs || []
+  var handle = ""
+  if (tels.length) {
+    handle = tels[0].indexOf("tel:") === 0 ? tels[0] : ("tel:" + tels[0])
+  } else if (emails.length) {
+    var e = emails[0].replace(/^email:/, "")
+    handle = e.indexOf("mailto:") === 0 ? e : ("mailto:" + e)
+  }
+  var card = {
+    name: field(cur.name, MAX_NAME),
+    tels: tels,
+    emails: emails,
+    adrs: adrs,
+    handle: field(handle, MAX_HANDLE)
+  }
+  card.entries = contactEntries(card)
+  card.preview = field(contactPreview(card), MAX_PREVIEW)
+  return card
+}
+
+function contactPreview(c) {
+  var entries = contactEntries(c)
+  var labels = []
+  var i
+  for (i = 0; i < entries.length; i++) labels.push(entries[i].label)
+  return labels.join(" · ")
+}
+
+function parseContacts(text) {
+  if (overflowText(text)) return []
+  var raw = String(text || "")
+  var trimmed = raw.trim()
+  if (!trimmed || /^No contacts match/i.test(trimmed) || /^Could not read contacts/i.test(trimmed))
+    return []
+  var out = []
+  var cur = null
+  var lines = raw.split("\n")
+  var n = Math.min(lines.length, 4000)
+  for (var i = 0; i < n && out.length < MAX_CONTACTS; i++) {
+    var line = lines[i]
+    if (!line.trim()) continue
+    var detail = line.match(/^\s{4,}(tel|email|mailto|adr|address|url):\s*(.+?)\s*$/i)
+    if (detail && cur) {
+      var kind = detail[1].toLowerCase()
+      var val = detail[2]
+      if (kind === "tel")
+        pushField(cur.tels, val.indexOf("tel:") === 0 ? val : ("tel:" + val), MAX_HANDLE)
+      else if (kind === "email" || kind === "mailto") {
+        val = val.replace(/^email:/, "")
+        pushField(cur.emails, val.indexOf("mailto:") === 0 ? val : ("mailto:" + val), MAX_HANDLE)
+      } else
+        pushField(cur.adrs, val.replace(/^(adr|address|url):/i, ""), MAX_PREVIEW)
+      continue
+    }
+    var nameLine = line.match(/^\s{2}(\S.*)$/)
+    if (nameLine && line.indexOf("      ") !== 0) {
+      if (cur) out.push(finishContact(cur))
+      if (out.length >= MAX_CONTACTS) {
+        cur = null
+        break
+      }
+      cur = { name: field(nameLine[1].replace(/\s+$/, ""), MAX_NAME), tels: [], emails: [], adrs: [] }
+    }
+  }
+  if (cur && out.length < MAX_CONTACTS) out.push(finishContact(cur))
+  return out
+}
+
+function digitsOnly(s) {
+  return String(s || "").replace(/[^\d]/g, "")
+}
+
+function sameNumber(a, b) {
+  var da = digitsOnly(a)
+  var db = digitsOnly(b)
+  if (!da || !db) return false
+  if (da === db) return true
+  if (da.length >= 10 && db.length >= 10)
+    return da.slice(-10) === db.slice(-10)
+  return false
+}
+
+function threadByHandle(threads, handle) {
+  var h = String(handle || "").toLowerCase()
+  if (!h) return null
+  var list = threads || []
+  var lim = Math.min(list.length, MAX_THREADS)
+  for (var i = 0; i < lim; i++) {
+    var th = String(list[i].handle || "").toLowerCase()
+    if (th === h) return list[i]
+    if (h.indexOf("mailto:") === 0 || th.indexOf("mailto:") === 0) {
+      if (th.replace(/^mailto:/, "") === h.replace(/^mailto:/, "")) return list[i]
+      continue
+    }
+    if (sameNumber(th, h)) return list[i]
+  }
+  return null
 }
 
 function parseNotifications(text) {
@@ -418,18 +577,6 @@ function fileFromUrl(url) {
   return u
 }
 
-function parseDownloads(text) {
-  if (overflowText(text)) return []
-  var lines = String(text || "").split("\n")
-  var n = Math.min(lines.length, 32)
-  var out = []
-  for (var i = 0; i < n && out.length < MAX_DOWNLOADS; i++) {
-    var name = field(lines[i].trim(), MAX_NAME)
-    if (name) out.push(name)
-  }
-  return out
-}
-
 function firstPhone(devices) {
   var list = devices || []
   var n = Math.min(list.length, MAX_DEVICES)
@@ -456,12 +603,14 @@ function initials(name) {
 
 function parseBtStatus(text) {
   if (overflowText(text))
-    return { mode: "", bond: "", tether: "", classOk: false, raw: "" }
+    return { mode: "", bond: "", tether: "", classOk: false, adapters: [], adapterId: "", adapterPinned: "", raw: "" }
   var raw = String(text || "")
   var mode = ""
   var bond = ""
   var tether = ""
+  var adapterId = ""
   var classOk = /class=ok/.test(raw)
+  var adapters = []
   var lines = raw.split("\n")
   var n = Math.min(lines.length, 256)
   for (var i = 0; i < n; i++) {
@@ -472,14 +621,66 @@ function parseBtStatus(text) {
     if (m) { bond = field(m[1].trim(), MAX_NOTE); continue }
     m = t.match(/^\s*Tether:\s*(.*)$/)
     if (m) { tether = field(m[1].trim(), MAX_NOTE); continue }
+    m = t.match(/^\s*Adapter:\s*(hci\d+)/)
+    if (m) { adapterId = field(m[1], 16); continue }
+    m = t.match(/^\s+(hci\d+)\s+([0-9A-Fa-f:]{11,})\s+(.*?)\s*$/)
+    if (m && adapters.length < MAX_ADAPTERS) {
+      var nm = m[3].replace(/\s+<- in use\s*$/, "").replace(/\s+$/, "")
+      adapters.push({
+        id: field(m[1], 16),
+        address: field(m[2], MAX_ADDR),
+        name: field(nm, MAX_NAME),
+        inUse: /<- in use/.test(m[3])
+      })
+      if (!adapterId && /<- in use/.test(m[3])) adapterId = field(m[1], 16)
+    }
   }
   return {
     mode: mode,
     bond: bond,
     tether: tether,
     classOk: classOk,
+    adapters: adapters,
+    adapterId: adapterId,
+    adapterPinned: "",
     raw: field(raw.trim(), MAX_NOTE)
   }
+}
+
+function parseCliCaps(text) {
+  var raw = String(text || "")
+  return {
+    calls: /--bt-calls\b/.test(raw),
+    adapter: /--bt-adapter\b/.test(raw),
+    forget: /--forget\b/.test(raw)
+  }
+}
+
+function parseCalls(text) {
+  if (overflowText(text)) return []
+  var raw = String(text || "").trim()
+  if (!raw || /No calls/i.test(raw) || /Unknown action/i.test(raw) || /Could not read calls/i.test(raw))
+    return []
+  var out = []
+  var lines = raw.split("\n")
+  var n = Math.min(lines.length, 256)
+  for (var i = 0; i < n && out.length < MAX_CALLS; i++) {
+    var line = lines[i]
+    if (!line.trim()) continue
+    if (/^\s+\//.test(line) && out.length) {
+      out[out.length - 1].path = field(line.trim(), MAX_HANDLE)
+      continue
+    }
+    var row = line.match(/^(\S+)\s+(\S+)\s+(.*)$/)
+    if (!row) continue
+    out.push({
+      state: field(row[1], MAX_STATUS),
+      number: field(row[2], MAX_HANDLE),
+      name: field(row[3].trim(), MAX_NAME),
+      path: ""
+    })
+  }
+  return out
 }
 
 function parseBtSetup(text) {
@@ -492,8 +693,25 @@ function parseBtSetup(text) {
   }
 }
 
+function parseRetention(value) {
+  var r = String(value || "")
+  if (r === "encrypted" || r === "plaintext" || r === "none") return r
+  return ""
+}
+
 function parseDiagnostics(text) {
-  var out = { enabled: false, ancs: false, ancsContent: true }
+  var out = {
+    enabled: false,
+    ancs: false,
+    ancsContent: true,
+    retention: "",
+    retentionReady: false,
+    groupMessages: false,
+    callsEnabled: false,
+    adapterPinned: "",
+    adapterId: "",
+    version: ""
+  }
   if (overflowText(text)) return out
   var raw = String(text || "")
   var start = raw.indexOf("{")
@@ -505,6 +723,17 @@ function parseDiagnostics(text) {
     out.enabled = obj.enabled === true
     out.ancs = obj.ancs_enabled === true
     out.ancsContent = obj.ancs_content_enabled !== false
+    out.groupMessages = obj.group_messages_enabled === true
+    out.callsEnabled = obj.calls_enabled === true
+      || !!(obj.status && obj.status.calls_enabled === true)
+    out.retention = parseRetention(obj.retention)
+    if (!out.retention && obj.status)
+      out.retention = parseRetention(obj.status.retention)
+    out.retentionReady = obj.retention_ready === true
+      || !!(obj.status && obj.status.retention_ready === true)
+    out.adapterPinned = field((obj.adapter || (obj.status && obj.status.adapter) || ""), 16)
+    out.adapterId = field(((obj.status && obj.status.capability && obj.status.capability.adapter_id) || ""), 16)
+    out.version = field((obj.version || (obj.status && obj.status.version) || ""), 32)
   } catch (e) {
   }
   return out

@@ -15,6 +15,8 @@ BarWidget {
   property var threads: []
   property var unreadSeen: ({})
   property var notifications: []
+  property var contacts: []
+  property string contactQuery: ""
   property var messages: []
   property bool cliOk: false
   property bool busy: false
@@ -31,10 +33,14 @@ BarWidget {
   property string clipPreview: ""
   property string clipDraft: ""
   property string filePath: ""
-  property var recentDownloads: []
-  property var btFlags: ({ enabled: false, ancs: false, ancsContent: true })
-  property var btStatus: ({ mode: "", bond: "", tether: "", classOk: false, raw: "" })
+  property var btFlags: ({ enabled: false, ancs: false, ancsContent: true, retention: "", retentionReady: false, groupMessages: false, callsEnabled: false, adapterPinned: "", adapterId: "", version: "" })
+  property var btStatus: ({ mode: "", bond: "", tether: "", classOk: false, adapters: [], adapterId: "", adapterPinned: "", raw: "" })
   property var btSetup: ({ complete: true, text: "" })
+  property var cliCaps: ({ calls: false, adapter: true, forget: true })
+  property var calls: []
+  property string dialDraft: ""
+  property string diagnosticsText: ""
+  property string copyOkNote: "Copied."
   property string acceptDraft: ""
   property string actionNote: ""
 
@@ -46,6 +52,7 @@ BarWidget {
   readonly property int readTermSecs: 8
   readonly property int readKillAfterSecs: 2
   readonly property string boundCmd: Model.fileFromUrl("" + Qt.resolvedUrl("scripts/bounded-cmd.sh"))
+  readonly property string pickFileCmd: Model.fileFromUrl("" + Qt.resolvedUrl("scripts/pick-file.sh"))
   readonly property var readWrap: [root.boundCmd, String(root.readMaxBytes), String(root.readTermSecs), String(root.readKillAfterSecs), "--"]
 
   function boundCommand(argv) {
@@ -102,21 +109,22 @@ BarWidget {
         root.lanDevices = []
         root.lanPeers = []
         root.pendingPair = null
-        root.recentDownloads = []
         root.busy = false
         root.refreshStep = 0
         if (root.opened && root.tab === "settings")
           root.loadSettings()
+        if (root.opened && root.tab === "calls")
+          root.loadCalls()
         if (root.page === "thread" && root.selectedThread && root.selectedThread.handle)
           root.loadMessages(root.selectedThread.handle)
       }
-    } else if (root.refreshStep === 6) {
-      if (!dlProc.running) dlProc.running = true
     } else {
       root.busy = false
       root.refreshStep = 0
       if (root.opened && root.tab === "settings")
         root.loadSettings()
+      if (root.opened && root.tab === "calls")
+        root.loadCalls()
       if (root.opened && root.tab === "link")
         root.loadLink()
       if (root.page === "thread" && root.selectedThread && root.selectedThread.handle)
@@ -241,7 +249,26 @@ BarWidget {
   }
 
   function pairLan(peer) {
-    root.acceptPending()
+    var t = Model.pairTarget(peer)
+    if (!t || !t.ip) {
+      root.acceptPending()
+      return
+    }
+    if (!root.wifiUp) {
+      root.setNote("Needs LAN.")
+      return
+    }
+    root.setNote("Sending pair request to " + (peer.name || t.ip) + "…")
+    lanPairProc.command = ["tether", "--pair", "--host", String(t.ip), "--port", String(t.port || 5134)]
+    if (!lanPairProc.running) lanPairProc.running = true
+  }
+
+  function forgetLan(fp) {
+    var f = String(fp || "").trim()
+    if (!f || !root.wifiUp) return
+    root.setNote("Forgetting Wi-Fi pairing…")
+    forgetProc.command = ["tether", "--forget", f]
+    if (!forgetProc.running) forgetProc.running = true
   }
 
   function acceptPending() {
@@ -269,6 +296,14 @@ BarWidget {
     root.sendFile()
   }
 
+  function browseFile() {
+    if (!root.wifiUp || browseProc.running || pickTimer.running) return
+    root.tab = "link"
+    root.showInbox()
+    root.close()
+    pickTimer.restart()
+  }
+
   function pairBt(addr, explicit) {
     var a = String(addr || "").trim()
     if (!a) return
@@ -291,17 +326,82 @@ BarWidget {
     var next = {
       enabled: root.btFlags.enabled,
       ancs: root.btFlags.ancs,
-      ancsContent: root.btFlags.ancsContent
+      ancsContent: root.btFlags.ancsContent,
+      retention: root.btFlags.retention || "",
+      retentionReady: root.btFlags.retentionReady === true,
+      groupMessages: root.btFlags.groupMessages === true,
+      callsEnabled: root.btFlags.callsEnabled === true,
+      adapterPinned: root.btFlags.adapterPinned || "",
+      adapterId: root.btFlags.adapterId || "",
+      version: root.btFlags.version || ""
     }
     if (which === "enabled") next.enabled = on
     else if (which === "ancs") next.ancs = on
     else if (which === "ancsContent") next.ancsContent = on
+    else if (which === "callsEnabled") next.callsEnabled = on
     else return
     root.btFlags = next
-    var flag = which === "enabled" ? "--bt-enable" : (which === "ancs" ? "--bt-ancs" : "--bt-ancs-content")
+    var flag = which === "enabled" ? "--bt-enable"
+      : (which === "ancs" ? "--bt-ancs"
+        : (which === "ancsContent" ? "--bt-ancs-content" : "--bt-calls-enable"))
     root.setNote("Updating Tether…")
     flagProc.command = ["tether", flag, on ? "on" : "off"]
     if (!flagProc.running) flagProc.running = true
+  }
+
+  function setAdapter(id) {
+    var a = String(id || "auto").trim()
+    if (!a) a = "auto"
+    root.setNote(a === "auto" ? "Using the first powered Bluetooth controller…" : ("Using " + a + "…"))
+    adapterProc.command = ["tether", "--bt-adapter", a]
+    if (!adapterProc.running) adapterProc.running = true
+  }
+
+  function copyText(text, okNote) {
+    var t = String(text || "")
+    if (!t) {
+      root.setNote("Nothing to copy.")
+      return
+    }
+    copyProc.command = ["bash", "-c", "printf '%s' \"$1\" | wl-copy 2>/dev/null || printf '%s' \"$1\" | tether -s", "omamessage-copy", t]
+    root.copyOkNote = okNote || "Copied."
+    if (!copyProc.running) copyProc.running = true
+  }
+
+  function copySetup() {
+    root.copyText(root.btSetup && root.btSetup.text ? root.btSetup.text : "", "Setup commands copied.")
+  }
+
+  function copyDiagnostics() {
+    root.copyText(root.diagnosticsText, "Diagnostics copied. Safe to paste into a Tether bug report.")
+  }
+
+  function loadCalls() {
+    if (!(root.cliCaps && root.cliCaps.calls)) {
+      root.calls = []
+      return
+    }
+    if (!callsProc.running) callsProc.running = true
+  }
+
+  function dialNumber(number) {
+    var n = String(number || root.dialDraft || "").replace(/[^\d+]/g, "")
+    if (!n) return
+    root.setNote("Dialing…")
+    dialProc.command = ["tether", "--bt-call", n]
+    if (!dialProc.running) dialProc.running = true
+  }
+
+  function answerCall() {
+    root.setNote("Answering…")
+    answerProc.command = ["tether", "--bt-answer"]
+    if (!answerProc.running) answerProc.running = true
+  }
+
+  function hangupCall() {
+    root.setNote("Hanging up…")
+    hangupProc.command = ["tether", "--bt-hangup"]
+    if (!hangupProc.running) hangupProc.running = true
   }
 
   function acceptPair() {
@@ -316,6 +416,53 @@ BarWidget {
     if (!statusProc.running) statusProc.running = true
     if (!setupProc.running) setupProc.running = true
     if (!diagProc.running) diagProc.running = true
+    if (!helpProc.running) helpProc.running = true
+  }
+
+  function searchContacts(q) {
+    root.contactQuery = String(q || "")
+    contactTimer.restart()
+  }
+
+  function loadContacts() {
+    var q = Model.contactQueryArg(root.contactQuery)
+    contactProc.command = q
+      ? root.boundCommand(["tether", "--bt-contacts", q])
+      : root.boundCommand(["tether", "--bt-contacts"])
+    if (!contactProc.running) contactProc.running = true
+  }
+
+  function openContact(c) {
+    if (!c) return
+    root.openContactHandle(c, c.handle)
+  }
+
+  function openContactHandle(c, handle) {
+    var h = String(handle || "").trim()
+    if (!h) {
+      root.setNote("No phone or email for that contact.")
+      return
+    }
+    var match = Model.threadByHandle(root.threads, h)
+    if (match) {
+      root.openThread(match)
+      return
+    }
+    root.openThread({
+      name: (c && c.name) || h,
+      handle: h,
+      time: "",
+      preview: "",
+      unread: 0
+    })
+  }
+
+  function setRetention(mode) {
+    var m = Model.parseRetention(mode)
+    if (!m) return
+    root.setNote("Updating how messages and contacts are kept on disk…")
+    retentionProc.command = ["tether", "--bt-retention", m]
+    if (!retentionProc.running) retentionProc.running = true
   }
 
   onWifiUpChanged: {
@@ -334,6 +481,23 @@ BarWidget {
     running: true
     repeat: true
     onTriggered: root.refresh()
+  }
+
+  Timer {
+    id: contactTimer
+    interval: 280
+    repeat: false
+    onTriggered: root.loadContacts()
+  }
+
+  Timer {
+    id: pickTimer
+    interval: 200
+    repeat: false
+    onTriggered: {
+      browseProc.command = [root.pickFileCmd]
+      if (!browseProc.running) browseProc.running = true
+    }
   }
 
   Process {
@@ -398,6 +562,26 @@ BarWidget {
       if (!Model.readRejected(code))
         root.notifications = Model.parseNotifications(notifOut.text)
       root.nextStep()
+    }
+  }
+
+  Process {
+    id: contactProc
+    command: root.readWrap.concat(["tether", "--bt-contacts"])
+    stdout: StdioCollector {
+      id: contactOut
+      waitForEnd: true
+    }
+    onExited: function(code) {
+      if (!Model.readRejected(code))
+        root.contacts = Model.parseContacts(contactOut.text)
+      var q = Model.contactQueryArg(root.contactQuery)
+      var asked = ""
+      var cmd = contactProc.command || []
+      var last = cmd.length ? String(cmd[cmd.length - 1]) : ""
+      if (last && last !== "--bt-contacts") asked = last
+      if (q !== asked && !contactProc.running)
+        root.loadContacts()
     }
   }
 
@@ -546,6 +730,120 @@ BarWidget {
   }
 
   Process {
+    id: retentionProc
+    command: ["tether", "--bt-retention", "encrypted"]
+    stdout: StdioCollector {
+      id: retentionOut
+      waitForEnd: true
+    }
+    onExited: function(code) {
+      var msg = Model.clipPreview(retentionOut.text)
+      if (code === 0)
+        root.setNote(msg || "On-disk retention updated.")
+      else
+        root.setNote(msg || "Could not update on-disk retention.")
+      root.loadSettings()
+    }
+  }
+
+  Process {
+    id: lanPairProc
+    command: ["tether", "--pair", "--host", "127.0.0.1", "--port", "5134"]
+    onExited: function(code) {
+      root.setNote(code === 0
+        ? "Pair request sent. Approve on the iPhone."
+        : "Pair request failed. Open Tether on the iPhone and Accept here.")
+      root.loadLink()
+    }
+  }
+
+  Process {
+    id: forgetProc
+    command: ["tether", "--forget", ""]
+    onExited: function(code) {
+      root.setNote(code === 0 ? "Forgot that Wi-Fi pairing." : "Could not forget that pairing.")
+      root.refresh()
+      root.loadLink()
+    }
+  }
+
+  Process {
+    id: adapterProc
+    command: ["tether", "--bt-adapter", "auto"]
+    stdout: StdioCollector {
+      id: adapterOut
+      waitForEnd: true
+    }
+    onExited: function(code) {
+      var msg = Model.clipPreview(adapterOut.text)
+      root.setNote(code === 0 ? (msg || "Bluetooth controller updated.") : (msg || "Could not change controller."))
+      root.loadSettings()
+      root.refresh()
+    }
+  }
+
+  Process {
+    id: copyProc
+    command: ["bash", "-c", "true"]
+    onExited: function(code) {
+      root.setNote(code === 0 ? root.copyOkNote : "Could not copy.")
+    }
+  }
+
+  Process {
+    id: helpProc
+    command: root.readWrap.concat(["tether", "--help"])
+    stdout: StdioCollector {
+      id: helpOut
+      waitForEnd: true
+    }
+    onExited: function(code) {
+      if (!Model.readRejected(code))
+        root.cliCaps = Model.parseCliCaps(helpOut.text)
+    }
+  }
+
+  Process {
+    id: callsProc
+    command: root.readWrap.concat(["tether", "--bt-calls"])
+    stdout: StdioCollector {
+      id: callsOut
+      waitForEnd: true
+    }
+    onExited: function(code) {
+      if (!Model.readRejected(code))
+        root.calls = Model.parseCalls(callsOut.text)
+    }
+  }
+
+  Process {
+    id: dialProc
+    command: ["tether", "--bt-call", ""]
+    onExited: function(code) {
+      root.setNote(code === 0 ? "Dialing." : "Could not place the call. Call control may be off.")
+      root.loadCalls()
+    }
+  }
+
+  Process {
+    id: answerProc
+    command: ["tether", "--bt-answer"]
+    onExited: function(code) {
+      root.setNote(code === 0 ? "Answering." : "Could not answer.")
+      root.loadCalls()
+    }
+  }
+
+  Process {
+    id: hangupProc
+    command: ["tether", "--bt-hangup"]
+    onExited: function(code) {
+      root.setNote(code === 0 ? "Hanging up." : "Could not hang up.")
+      root.loadCalls()
+    }
+  }
+
+  Process {
     id: acceptProc
     command: ["tether", "--accept", ""]
     onExited: function(code) {
@@ -569,8 +867,10 @@ BarWidget {
       waitForEnd: true
     }
     onExited: function(code) {
-      if (!Model.readRejected(code))
-        root.btStatus = Model.parseBtStatus(statusOut.text)
+      if (Model.readRejected(code)) return
+      var st = Model.parseBtStatus(statusOut.text)
+      st.adapterPinned = (root.btFlags && root.btFlags.adapterPinned) || (root.btStatus && root.btStatus.adapterPinned) || ""
+      root.btStatus = st
     }
   }
 
@@ -595,22 +895,47 @@ BarWidget {
       waitForEnd: true
     }
     onExited: function(code) {
-      if (!Model.readRejected(code))
-        root.btFlags = Model.parseDiagnostics(diagOut.text)
+      if (Model.readRejected(code)) return
+      var d = Model.parseDiagnostics(diagOut.text)
+      root.btFlags = d
+      root.diagnosticsText = String(diagOut.text || "")
+      var st = Model.parseBtStatus(root.btStatus && root.btStatus.raw ? root.btStatus.raw : "")
+      if (root.btStatus && root.btStatus.adapters)
+        st = root.btStatus
+      st.adapterPinned = d.adapterPinned
+      if (d.adapterId) st.adapterId = d.adapterId
+      root.btStatus = {
+        mode: st.mode,
+        bond: st.bond,
+        tether: st.tether,
+        classOk: st.classOk,
+        adapters: st.adapters || [],
+        adapterId: st.adapterId || d.adapterId,
+        adapterPinned: d.adapterPinned,
+        raw: st.raw
+      }
     }
   }
 
   Process {
-    id: dlProc
-    command: root.readWrap.concat(["bash", "-c", "ls -1t -- \"$HOME/Downloads\" 2>/dev/null | head -n 6"])
+    id: browseProc
+    command: ["true"]
     stdout: StdioCollector {
-      id: dlOut
+      id: browseOut
       waitForEnd: true
     }
     onExited: function(code) {
-      if (!Model.readRejected(code))
-        root.recentDownloads = Model.parseDownloads(dlOut.text)
-      root.nextStep()
+      if (code === 0) {
+        var p = String(browseOut.text || "").trim()
+        if (p) {
+          root.filePath = p
+          var slash = p.lastIndexOf("/")
+          root.setNote("Selected " + (slash >= 0 ? p.slice(slash + 1) : p))
+        }
+      }
+      root.tab = "link"
+      root.showInbox()
+      root.open()
     }
   }
 
@@ -682,6 +1007,18 @@ BarWidget {
       root.tab = "settings"
       root.open()
       root.loadSettings()
+    }
+    function contacts(): void {
+      root.showInbox()
+      root.tab = "contacts"
+      root.open()
+      root.loadContacts()
+    }
+    function calls(): void {
+      root.showInbox()
+      root.tab = "calls"
+      root.open()
+      root.loadCalls()
     }
   }
 

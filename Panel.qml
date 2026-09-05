@@ -18,6 +18,8 @@ Panel {
   readonly property var threads: hw && hw.threads ? hw.threads : []
   readonly property var unreadSeen: hw && hw.unreadSeen ? hw.unreadSeen : ({})
   readonly property var notifications: hw && hw.notifications ? hw.notifications : []
+  readonly property var contacts: hw && hw.contacts ? hw.contacts : []
+  readonly property string contactQuery: hw ? hw.contactQuery : ""
   readonly property var messages: hw && hw.messages ? hw.messages : []
   readonly property string page: hw ? hw.page : "inbox"
   readonly property string tab: hw ? hw.tab : "messages"
@@ -29,18 +31,46 @@ Panel {
   readonly property var lanPeers: hw && hw.lanPeers ? hw.lanPeers : []
   readonly property var pendingPair: hw ? hw.pendingPair : null
   readonly property string clipPreview: hw ? hw.clipPreview : ""
-  readonly property var recentDownloads: hw && hw.recentDownloads ? hw.recentDownloads : []
-  readonly property var btFlags: hw && hw.btFlags ? hw.btFlags : ({ enabled: false, ancs: false, ancsContent: true })
+
+  readonly property var btFlags: hw && hw.btFlags ? hw.btFlags : ({ enabled: false, ancs: false, ancsContent: true, retention: "", retentionReady: false, groupMessages: false, callsEnabled: false })
   readonly property var btStatus: hw && hw.btStatus ? hw.btStatus : ({})
   readonly property var btSetup: hw && hw.btSetup ? hw.btSetup : ({ complete: true, text: "" })
+  readonly property var cliCaps: hw && hw.cliCaps ? hw.cliCaps : ({ calls: false })
+  readonly property var calls: hw && hw.calls ? hw.calls : []
   readonly property string actionNote: hw ? hw.actionNote : ""
-  readonly property var tabs: [
-    { value: "messages", label: "Messages" },
-    { value: "notifications", label: "Notify" },
-    { value: "link", label: "Link" },
-    { value: "settings", label: "Settings" }
+  readonly property var tabs: {
+    var t = [
+      { value: "messages", label: "Messages" },
+      { value: "notifications", label: "Notify" }
+    ]
+    if (root.cliCaps && root.cliCaps.calls)
+      t.push({ value: "calls", label: "Calls" })
+    t.push({ value: "link", label: "Link" })
+    t.push({ value: "settings", label: "Settings" })
+    return t
+  }
+  readonly property var adapterOptions: {
+    var o = [{ value: "auto", label: "Auto" }]
+    var ads = (root.btStatus && root.btStatus.adapters) ? root.btStatus.adapters : []
+    var i
+    for (i = 0; i < ads.length; i++) {
+      o.push({
+        value: ads[i].id,
+        label: ads[i].inUse ? (ads[i].id + " in use") : ads[i].id
+      })
+    }
+    return o
+  }
+  readonly property string adapterValue: (root.btStatus && root.btStatus.adapterPinned) ? root.btStatus.adapterPinned : "auto"
+  readonly property var retentionOptions: [
+    { value: "encrypted", label: "Encrypted" },
+    { value: "plaintext", label: "Plaintext" },
+    { value: "none", label: "None" }
   ]
   property bool unpairOpen: false
+  property bool retentionOpen: false
+  property bool forgetOpen: false
+  property var forgetDevice: null
 
   readonly property color fg: bar ? bar.foreground : Color.popups.text
   readonly property color muted: Color.muted
@@ -53,10 +83,13 @@ Panel {
   readonly property int paneWidth: Style.space(420)
   readonly property int panelBodyHeight: Style.space(540)
   readonly property int composeHeight: Style.space(48)
-  readonly property int inboxFooterH: (root.page === "inbox" && root.tab === "messages") ? Style.space(28) : 0
+  readonly property bool inboxFooter: root.page === "inbox" && (root.tab === "messages" || root.tab === "contacts")
+  readonly property int inboxFooterH: root.inboxFooter ? Style.space(28) : 0
   readonly property int composeH: {
     if (root.page === "thread") return root.composeHeight
     if (root.page === "inbox" && root.tab === "messages") return root.composeHeight
+    if (root.page === "inbox" && root.tab === "contacts") return root.composeHeight
+    if (root.page === "inbox" && root.tab === "calls") return root.composeHeight
     return 0
   }
   readonly property int bodyListHeight: {
@@ -134,10 +167,18 @@ Panel {
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
-      blocked: replyField.activeFocus || newTo.activeFocus || newBody.activeFocus || fileField.activeFocus || clipField.activeFocus || acceptField.activeFocus
+      blocked: replyField.activeFocus || newTo.activeFocus || newBody.activeFocus || contactSearch.activeFocus || clipField.activeFocus || fileField.activeFocus || acceptField.activeFocus || dialField.activeFocus
       onCloseRequested: {
         if (root.unpairOpen) {
           root.unpairOpen = false
+          return
+        }
+        if (root.retentionOpen) {
+          root.retentionOpen = false
+          return
+        }
+        if (root.forgetOpen) {
+          root.forgetOpen = false
           return
         }
         if (root.page !== "inbox" && hw) hw.showInbox()
@@ -238,6 +279,8 @@ Panel {
                 hw.tab = v
                 if (v === "settings" && hw.loadSettings)
                   hw.loadSettings()
+                if (v === "calls" && hw.loadCalls)
+                  hw.loadCalls()
                 if (v === "link" && hw.loadLink)
                   hw.loadLink()
               }
@@ -395,6 +438,114 @@ Panel {
           }
         }
 
+        Item {
+          visible: root.page === "inbox" && root.tab === "contacts"
+          width: parent.width
+          height: root.composeHeight
+
+          TextField {
+            id: contactSearch
+            anchors.fill: parent
+            anchors.leftMargin: Style.space(12)
+            anchors.rightMargin: Style.space(12)
+            anchors.topMargin: Style.space(6)
+            anchors.bottomMargin: Style.space(6)
+            placeholderText: "Search contacts"
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+            foreground: root.fg
+            accent: root.accent
+            text: root.contactQuery
+            onTextChanged: if (hw && text !== hw.contactQuery) hw.searchContacts(text)
+          }
+        }
+
+        ListView {
+          id: contactList
+          visible: root.page === "inbox" && root.tab === "contacts"
+          width: parent.width
+          height: root.bodyListHeight
+          clip: true
+          boundsBehavior: Flickable.StopAtBounds
+          spacing: 0
+          model: root.contacts
+
+          delegate: Item {
+            required property var modelData
+            property var contact: modelData
+            width: contactList.width
+            height: contactCol.implicitHeight + Style.space(16)
+
+            Rectangle {
+              anchors.fill: parent
+              color: cHover.containsMouse ? root.hoverFill : "transparent"
+            }
+
+            MouseArea {
+              id: cHover
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onClicked: if (hw) hw.openContact(contact)
+            }
+
+            Column {
+              id: contactCol
+              anchors.left: parent.left
+              anchors.right: parent.right
+              anchors.leftMargin: Style.space(16)
+              anchors.rightMargin: Style.space(16)
+              anchors.top: parent.top
+              anchors.topMargin: Style.space(8)
+              spacing: 2
+              Text {
+                width: parent.width
+                textFormat: Text.PlainText
+                text: contact.name
+                elide: Text.ElideRight
+                color: root.fg
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.body
+              }
+              Repeater {
+                model: contact.entries || []
+                delegate: Text {
+                  required property var modelData
+                  width: contactCol.width
+                  textFormat: Text.PlainText
+                  text: modelData.label
+                  wrapMode: Text.Wrap
+                  color: root.muted
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.bodySmall
+                  MouseArea {
+                    anchors.fill: parent
+                    enabled: !!modelData.handle
+                    cursorShape: modelData.handle ? Qt.PointingHandCursor : Qt.ArrowCursor
+                    onClicked: if (hw && modelData.handle) hw.openContactHandle(contact, modelData.handle)
+                  }
+                }
+              }
+            }
+          }
+
+          Text {
+            visible: root.contacts.length === 0
+            anchors.centerIn: parent
+            textFormat: Text.PlainText
+            text: {
+              if (!(root.status && root.status.pbap))
+                return "Contacts not connected"
+              if (root.contactQuery)
+                return "No matches"
+              return "No contacts yet"
+            }
+            color: root.muted
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+          }
+        }
+
         // ---- inbox: notifications ----
         ListView {
           id: noticeList
@@ -489,6 +640,165 @@ Panel {
               fontFamily: root.fontFamily
               fontSize: Style.font.bodySmall
               onClicked: if (hw) hw.solicit()
+            }
+          }
+        }
+
+        Item {
+          visible: root.page === "inbox" && root.tab === "calls"
+          width: parent.width
+          height: root.composeHeight
+
+          Row {
+            anchors.fill: parent
+            anchors.leftMargin: Style.space(12)
+            anchors.rightMargin: Style.space(12)
+            anchors.topMargin: Style.space(6)
+            anchors.bottomMargin: Style.space(6)
+            spacing: Style.space(8)
+
+            TextField {
+              id: dialField
+              width: parent.width - dialBtn.width - Style.space(8)
+              anchors.verticalCenter: parent.verticalCenter
+              placeholderText: "Number"
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+              foreground: root.fg
+              accent: root.accent
+              text: hw ? hw.dialDraft : ""
+              onTextChanged: if (hw && text !== hw.dialDraft) hw.dialDraft = text
+              onAccepted: if (hw) hw.dialNumber(text)
+            }
+            Button {
+              id: dialBtn
+              text: "Call"
+              bordered: true
+              foreground: root.fg
+              accent: root.accent
+              fontFamily: root.fontFamily
+              fontSize: Style.font.bodySmall
+              anchors.verticalCenter: parent.verticalCenter
+              enabled: dialField.text.replace(/[^\d+]/g, "").length > 0
+              onClicked: if (hw) hw.dialNumber(dialField.text)
+            }
+          }
+        }
+
+        ListView {
+          id: callList
+          visible: root.page === "inbox" && root.tab === "calls"
+          width: parent.width
+          height: root.bodyListHeight
+          clip: true
+          boundsBehavior: Flickable.StopAtBounds
+          model: root.calls
+          footer: Item {
+            width: callList.width
+            height: Style.space(40)
+            Row {
+              anchors.centerIn: parent
+              spacing: Style.space(8)
+              Button {
+                text: "Answer"
+                bordered: true
+                foreground: root.fg
+                accent: root.accent
+                fontFamily: root.fontFamily
+                fontSize: Style.font.bodySmall
+                onClicked: if (hw) hw.answerCall()
+              }
+              Button {
+                text: "Hang up"
+                bordered: true
+                foreground: root.fg
+                accent: root.accent
+                fontFamily: root.fontFamily
+                fontSize: Style.font.bodySmall
+                onClicked: if (hw) hw.hangupCall()
+              }
+            }
+          }
+
+          delegate: Item {
+            required property var modelData
+            width: callList.width
+            height: Style.space(56)
+
+            Column {
+              anchors.verticalCenter: parent.verticalCenter
+              anchors.left: parent.left
+              anchors.right: parent.right
+              anchors.leftMargin: Style.space(16)
+              anchors.rightMargin: Style.space(16)
+              spacing: 2
+              Text {
+                width: parent.width
+                textFormat: Text.PlainText
+                text: modelData.state
+                color: root.muted
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+              Text {
+                width: parent.width
+                textFormat: Text.PlainText
+                text: (modelData.name ? modelData.name + " · " : "") + modelData.number
+                elide: Text.ElideRight
+                color: root.fg
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.body
+              }
+            }
+          }
+
+          Column {
+            visible: root.calls.length === 0
+            anchors.centerIn: parent
+            spacing: Style.space(10)
+            width: parent.width - Style.space(40)
+            Text {
+              width: parent.width
+              wrapMode: Text.WordWrap
+              horizontalAlignment: Text.AlignHCenter
+              textFormat: Text.PlainText
+              text: root.btFlags.callsEnabled ? "No calls" : "Call control is off"
+              color: root.muted
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+            }
+            Text {
+              visible: root.actionNote !== ""
+              width: parent.width
+              wrapMode: Text.WordWrap
+              horizontalAlignment: Text.AlignHCenter
+              textFormat: Text.PlainText
+              text: root.actionNote
+              color: root.fg
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+            }
+            Row {
+              anchors.horizontalCenter: parent.horizontalCenter
+              spacing: Style.space(8)
+              Button {
+                text: "Answer"
+                bordered: true
+                foreground: root.fg
+                accent: root.accent
+                fontFamily: root.fontFamily
+                fontSize: Style.font.bodySmall
+                onClicked: if (hw) hw.answerCall()
+              }
+              Button {
+                text: "Hang up"
+                bordered: true
+                foreground: root.fg
+                accent: root.accent
+                fontFamily: root.fontFamily
+                fontSize: Style.font.bodySmall
+                onClicked: if (hw) hw.hangupCall()
+              }
             }
           }
         }
@@ -602,6 +912,37 @@ Panel {
               fontSize: Style.font.bodySmall
               onClicked: if (hw) hw.acceptPending()
             }
+            Repeater {
+              model: root.lanPeers
+              Button {
+                required property var modelData
+                visible: root.wifiUp
+                text: "Pair " + modelData.name
+                bordered: true
+                foreground: root.fg
+                accent: root.accent
+                fontFamily: root.fontFamily
+                fontSize: Style.font.bodySmall
+                onClicked: if (hw) hw.pairLan(modelData)
+              }
+            }
+            Repeater {
+              model: root.lanDevices
+              Button {
+                required property var modelData
+                visible: root.wifiUp
+                text: "Forget " + modelData.name
+                bordered: true
+                foreground: root.fg
+                accent: root.accent
+                fontFamily: root.fontFamily
+                fontSize: Style.font.bodySmall
+                onClicked: {
+                  root.forgetDevice = modelData
+                  root.forgetOpen = true
+                }
+              }
+            }
 
             Text {
               textFormat: Text.PlainText
@@ -690,8 +1031,8 @@ Panel {
               spacing: Style.space(8)
               TextField {
                 id: fileField
-                width: parent.width - fileSend.width - Style.space(8)
-                placeholderText: "/path/to/file"
+                width: parent.width - fileBrowse.width - fileSend.width - Style.space(16)
+                placeholderText: "~/Downloads"
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.bodySmall
                 foreground: root.fg
@@ -701,6 +1042,16 @@ Panel {
                 onAccepted: if (hw) hw.sendFile()
               }
               Button {
+                id: fileBrowse
+                text: "Browse"
+                bordered: true
+                foreground: root.fg
+                accent: root.accent
+                fontFamily: root.fontFamily
+                fontSize: Style.font.bodySmall
+                onClicked: if (hw) hw.browseFile()
+              }
+              Button {
                 id: fileSend
                 text: "Send"
                 bordered: true
@@ -708,20 +1059,8 @@ Panel {
                 accent: root.accent
                 fontFamily: root.fontFamily
                 fontSize: Style.font.bodySmall
+                enabled: fileField.text.trim().length > 0
                 onClicked: if (hw) hw.sendFile()
-              }
-            }
-            Repeater {
-              model: root.recentDownloads
-              Text {
-                required property string modelData
-                width: linkCol.width - Style.space(28)
-                elide: Text.ElideMiddle
-                textFormat: Text.PlainText
-                text: modelData
-                color: root.fg
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.caption
               }
             }
           }
@@ -814,31 +1153,162 @@ Panel {
               onClicked: if (hw) hw.setBtFlag("ancsContent", !root.btFlags.ancsContent)
             }
 
-            Row {
-              spacing: Style.space(8)
-              Button {
-                text: "Pair iPhone"
-                bordered: true
-                foreground: root.fg
-                accent: root.accent
-                fontFamily: root.fontFamily
-                fontSize: Style.font.bodySmall
-                onClicked: {
-                  var p = Model.firstPhone(root.devices)
-                  if (hw && p) hw.pairBt(p.address, false)
+            Toggle {
+              visible: !!(root.cliCaps && root.cliCaps.calls)
+              width: parent.width - Style.space(28)
+              label: "Call control (audio stays on the iPhone)"
+              checked: root.btFlags.callsEnabled
+              foreground: root.fg
+              accent: root.accent
+              fontFamily: root.fontFamily
+              titleSize: Style.font.bodySmall
+              onClicked: if (hw) hw.setBtFlag("callsEnabled", !root.btFlags.callsEnabled)
+            }
+
+            Text {
+              width: parent.width - Style.space(28)
+              wrapMode: Text.WordWrap
+              textFormat: Text.PlainText
+              text: root.btFlags.groupMessages
+                ? "Group replies are on in Tether."
+                : "Group replies stay off until enabled in Tether (MAP has no group thread id)."
+              color: root.muted
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+            }
+
+            Text {
+              textFormat: Text.PlainText
+              text: "CONTROLLER"
+              color: root.muted
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              font.letterSpacing: 1
+            }
+            ButtonGroup {
+              visible: root.adapterOptions.length > 1
+              width: parent.width - Style.space(28)
+              options: root.adapterOptions
+              value: root.adapterValue
+              foreground: root.fg
+              background: "transparent"
+              accent: root.accent
+              fontFamily: root.fontFamily
+              fontSize: Style.font.caption
+              focusable: false
+              onChanged: function(v) {
+                if (!hw) return
+                if (v === root.adapterValue) return
+                hw.setAdapter(v)
+              }
+            }
+            Text {
+              visible: root.adapterOptions.length <= 1
+              width: parent.width - Style.space(28)
+              wrapMode: Text.WordWrap
+              textFormat: Text.PlainText
+              text: root.btStatus && root.btStatus.adapterId
+                ? ("Using " + root.btStatus.adapterId)
+                : "No Bluetooth controller reported."
+              color: root.fg
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+            }
+
+            Text {
+              visible: root.devices.length > 0
+              textFormat: Text.PlainText
+              text: "DEVICES"
+              color: root.muted
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              font.letterSpacing: 1
+            }
+            Repeater {
+              model: root.devices
+              Column {
+                required property var modelData
+                width: settingsCol.width - Style.space(28)
+                spacing: Style.space(4)
+                Text {
+                  width: parent.width
+                  wrapMode: Text.WordWrap
+                  textFormat: Text.PlainText
+                  text: (modelData.name || modelData.address) + (modelData.iphone ? " · iPhone" : "")
+                  color: root.fg
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.bodySmall
+                }
+                Text {
+                  width: parent.width
+                  wrapMode: Text.WordWrap
+                  textFormat: Text.PlainText
+                  text: Model.deviceSubtitle(modelData)
+                  color: root.muted
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                }
+                Row {
+                  spacing: Style.space(8)
+                  Button {
+                    text: "Pair"
+                    bordered: true
+                    foreground: root.fg
+                    accent: root.accent
+                    fontFamily: root.fontFamily
+                    fontSize: Style.font.caption
+                    onClicked: if (hw) hw.pairBt(modelData.address, false)
+                  }
+                  Button {
+                    text: "Explicit"
+                    bordered: true
+                    foreground: root.fg
+                    accent: root.accent
+                    fontFamily: root.fontFamily
+                    fontSize: Style.font.caption
+                    onClicked: if (hw) hw.pairBt(modelData.address, true)
+                  }
                 }
               }
-              Button {
-                text: "Explicit pair"
-                bordered: true
-                foreground: root.fg
-                accent: root.accent
-                fontFamily: root.fontFamily
-                fontSize: Style.font.bodySmall
-                onClicked: {
-                  var p = Model.firstPhone(root.devices)
-                  if (hw && p) hw.pairBt(p.address, true)
+            }
+
+            Text {
+              textFormat: Text.PlainText
+              text: "ON DISK"
+              color: root.muted
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              font.letterSpacing: 1
+            }
+            Text {
+              width: parent.width - Style.space(28)
+              wrapMode: Text.WordWrap
+              textFormat: Text.PlainText
+              text: root.btFlags.retentionReady
+                ? "Message history and contacts. Encrypted uses the desktop keyring."
+                : "Message history and contacts. Encrypted needs a desktop keyring."
+              color: root.fg
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+            }
+            ButtonGroup {
+              width: parent.width - Style.space(28)
+              options: root.retentionOptions
+              value: root.btFlags.retention || "encrypted"
+              foreground: root.fg
+              background: "transparent"
+              accent: root.accent
+              fontFamily: root.fontFamily
+              fontSize: Style.font.caption
+              focusable: false
+              onChanged: function(v) {
+                if (!hw) return
+                if (v === root.btFlags.retention) return
+                if (v === "none") {
+                  root.retentionOpen = true
+                  return
                 }
+                hw.setRetention(v)
               }
             }
 
@@ -892,6 +1362,29 @@ Panel {
               color: root.fg
               font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
+            }
+            Row {
+              spacing: Style.space(8)
+              Button {
+                visible: !!(root.btSetup && root.btSetup.text)
+                text: "Copy commands"
+                bordered: true
+                foreground: root.fg
+                accent: root.accent
+                fontFamily: root.fontFamily
+                fontSize: Style.font.bodySmall
+                onClicked: if (hw) hw.copySetup()
+              }
+              Button {
+                visible: !!(hw && hw.diagnosticsText)
+                text: "Copy diagnostics"
+                bordered: true
+                foreground: root.fg
+                accent: root.accent
+                fontFamily: root.fontFamily
+                fontSize: Style.font.bodySmall
+                onClicked: if (hw) hw.copyDiagnostics()
+              }
             }
 
             Text {
@@ -1091,14 +1584,35 @@ Panel {
         }
 
         PanelSeparator {
-          visible: root.page === "inbox" && root.tab === "messages"
+          visible: root.inboxFooter
           foreground: root.fg
         }
 
         Item {
-          visible: root.page === "inbox" && root.tab === "messages"
+          visible: root.inboxFooter
           width: parent.width
           height: visible ? root.inboxFooterH : 0
+
+          Text {
+            anchors.left: parent.left
+            anchors.leftMargin: Style.space(16)
+            anchors.verticalCenter: parent.verticalCenter
+            textFormat: Text.PlainText
+            text: "Contacts"
+            color: root.tab === "contacts" ? root.fg : root.accent
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+            MouseArea {
+              anchors.fill: parent
+              cursorShape: Qt.PointingHandCursor
+              onClicked: {
+                if (!hw) return
+                hw.tab = "contacts"
+                if (hw.loadContacts) hw.loadContacts()
+              }
+            }
+          }
+
           Text {
             anchors.right: parent.right
             anchors.rightMargin: Style.space(16)
@@ -1133,6 +1647,47 @@ Panel {
           root.unpairOpen = false
           var p = Model.firstPhone(root.devices)
           if (hw && p) hw.unpairBt(p.address)
+        }
+      }
+
+      ConfirmDialog {
+        anchors.fill: parent
+        opened: root.retentionOpen
+        z: 11
+        message: "Delete stored messages and contacts on this PC and keep nothing further?"
+        confirmText: "Keep nothing"
+        cancelText: "Cancel"
+        background: Color.popups.background
+        foreground: root.fg
+        selectedText: root.accent
+        fontFamily: root.fontFamily
+        onCanceled: root.retentionOpen = false
+        onConfirmed: {
+          root.retentionOpen = false
+          if (hw) hw.setRetention("none")
+        }
+      }
+
+      ConfirmDialog {
+        anchors.fill: parent
+        opened: root.forgetOpen
+        z: 12
+        message: "Forget this Wi-Fi pairing? Clipboard and files will stop until you pair again."
+        confirmText: "Forget"
+        cancelText: "Cancel"
+        background: Color.popups.background
+        foreground: root.fg
+        selectedText: root.accent
+        fontFamily: root.fontFamily
+        onCanceled: {
+          root.forgetOpen = false
+          root.forgetDevice = null
+        }
+        onConfirmed: {
+          var d = root.forgetDevice
+          root.forgetOpen = false
+          root.forgetDevice = null
+          if (hw && d && d.fingerprint) hw.forgetLan(d.fingerprint)
         }
       }
     }

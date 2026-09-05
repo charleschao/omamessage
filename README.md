@@ -65,11 +65,13 @@ Removing the bar widget does not stop Messages if `tetherd` / `tether-gtk` still
 
 - Hero status plus the paired iPhone name
 - Messages: conversation list (unread dots), transcript, reply, new message
+- Contacts (inbox footer, left): search iPhone contacts (PBAP); every phone and email Tether returns; tap one to chat
 - Notifications: mirrored ANCS (needs Bluetooth LE); re-advertise permissions
-- Link (always visible): Bluetooth vs iOS-app status, clipboard pull/push, file drop + Send, recent `~/Downloads`
-- Settings: MAP / notification toggles, pair / explicit-pair / unpair, accept iOS fingerprint, `tether --bt-setup` remaining steps
+- Link (always visible): discover / accept / pair / forget the iOS app, clipboard pull/push, file drop or Browse (`~/Downloads`)
+- Settings: MAP / notification / call-control toggles, on-disk retention, Bluetooth controller, pair / explicit-pair / unpair, copy `--bt-setup` commands and diagnostics
+- Calls (when Tether CLI has `--bt-calls`): dial, answer, hang up; audio stays on the iPhone
 - Follows the Omarchy light or dark theme (`omarchy theme set`)
-- Middle-click the bar label, or footer **Open Tether**: `tether-gtk`
+- Middle-click the bar label, or footer **Open Tether** (right): `tether-gtk`
 
 Clipboard, files, and iOS pairing **disable while this PC has no LAN** (ethernet counts). Bluetooth messages still work. GTK “connected” is not the same as a pinned `tetherd` pair (`tether --list-devices`).
 
