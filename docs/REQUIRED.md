@@ -2,33 +2,28 @@
 
 This Omarchy plugin **does not include Tether**.
 
-It is a bar/inbox UI that shells out to:
+It is a bar inbox that talks newline JSON to:
 
-- `tether --bt-connection`
-- `tether --bt-devices`
-- `tether --bt-threads`
-- `tether --bt-messages`
-- `tether --bt-contacts`
-- `tether --bt-send`
-- `tether --bt-retention`
-- `tether --bt-notifications`
-- `tether --bt-solicit`
-- `tether --bt-pair` / `--bt-unpair` / `--explicit-pair`
-- `tether --bt-enable` `--bt-ancs` `--bt-ancs-content`
-- `tether --bt-adapter`
-- `tether --bt-status` `--bt-setup` `--bt-diagnostics`
-- `tether --bt-calls` `--bt-call` `--bt-answer` `--bt-hangup` `--bt-calls-enable` (when the installed CLI has them)
-- `tether-gtk` (middle-click / Open Tether)
-- `tether --list-devices`, `--discover`, `--pair`, `-g`, `-s`, `-f`, `--accept`, `--forget` — Link / Settings (disabled while this PC has no LAN; ethernet counts)
+```
+$XDG_RUNTIME_DIR/tether/tetherd.sock
+```
 
-OTP / browser / mail add-ons stay in Tether (Firefox / Thunderbird). They are not installed by this plugin.
+The same socket `tether-gtk` uses. Typical commands:
+
+- `subscribe`
+- `bt_connection` / `bt_list_devices` / `bt_list_threads` / `bt_list_messages`
+- `bt_list_contacts` / `bt_send_message` / `bt_mark_read`
+- `bt_list_calls` / `bt_call_action`
+- `bt_solicit`
+
+OTP vault, browser, and mail add-ons stay in Tether (Firefox / Thunderbird). They are not installed by this plugin. Clipboard sync and file transfer stay in `tetherd` / `tether-gtk` / the iOS app.
 
 Those binaries come from [Tether](https://github.com/zackb/tether) by **Zack Bartel**. Install that project first (on Arch: `tether-bin` from the AUR), complete `tether --bt-setup`, and pair the iPhone over Bluetooth.
 
 Without Tether:
 
-- the widget label stays dim / disconnected
-- thread and notification lists are empty
+- the widget label stays dim
+- the conversation list is empty
 - replies cannot send
 
 `tetherd` (the daemon) must stay running in the background. That is the process that holds the Bluetooth MAP link. You do **not** need the `tether-gtk` window open.

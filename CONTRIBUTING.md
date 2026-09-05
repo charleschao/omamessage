@@ -8,11 +8,13 @@ This is an Omarchy bar widget. Tether itself lives at https://github.com/zackb/t
 2. Keep plugin id `io.github.charleschao.omamessage`.
 3. `omarchy plugin validate .`
 4. If QML changed: `qmllint -I "$OMARCHY_PATH/shell" BarWidget.qml Panel.qml`
-5. Confirm README + manifest still say Tether is required and not bundled.
+5. `node scripts/test-model.js`
+6. Confirm README + manifest still say Tether is required and not bundled.
 
 ## Do not
 
 - Copy Tether source
-- Add OTP / browser / mail extensions
-- Hide the Link or Settings tab when Wi-Fi is off
+- Add OTP vault / browser / mail extensions
+- Add Settings, Link, Notify, Calls, or Contacts tabs
+- Scrape `tether --bt-*` stdout for the inbox (use tetherd.sock JSON)
 - Introduce `omarchy.*` ids or symlinks

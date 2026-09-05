@@ -10,7 +10,7 @@ Omamessage
 
 ## Short description (manifest)
 
-Requires Tether by Zack Bartel installed separately (github.com/zackb/tether). Omarchy bar widget for iPhone SMS/iMessage, notifications, clipboard, and files via the local tether CLI — not a standalone messenger.
+Requires Tether by Zack Bartel installed separately (github.com/zackb/tether). Omarchy bar inbox for iPhone SMS/iMessage via the local tetherd socket — not a standalone messenger.
 
 ## Longer blurb
 
@@ -53,4 +53,4 @@ Manual setup: requires Tether by Zack Bartel (github.com/zackb/tether) installed
 - [ ] `preview.png` is at the repo root
 - [ ] Submit form: category Widgets; tags Bar, Quickshell, Hyprland (max three)
 - [ ] `omarchy plugin validate` passes on a clean clone
-- [ ] Test machine has `tether` on PATH; a machine without it fails clearly
+- [ ] Test machine has `tetherd` on PATH; a machine without it fails clearly

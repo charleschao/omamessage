@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 import Quickshell
 import Quickshell.Io
@@ -5,69 +6,145 @@ import qs.Commons
 import qs.Ui
 import "Model.js" as Model
 
-// Omarchy bar widget for Tether by Zack Bartel — https://github.com/zackb/tether
+// Omarchy bar inbox for Tether by Zack Bartel — https://github.com/zackb/tether
 BarWidget {
   id: root
   moduleName: "io.github.charleschao.omamessage"
 
-  property var status: ({ present: false, map: false, pbap: false, ancs: false, bredr: false, le: false, note: "", raw: "" })
+  property bool daemonOk: false
+  property int reconnectAttempt: 0
+  property bool spawnAttempted: false
+  property var status: ({ present: false, paired: false, map: false, pbap: false, classic: false, le: false, mapError: "", note: "", linkReason: "", profileReason: "" })
   property var devices: []
   property var threads: []
-  property var unreadSeen: ({})
-  property var notifications: []
-  property var contacts: []
-  property string contactQuery: ""
   property var messages: []
-  property bool cliOk: false
-  property bool busy: false
-  property int refreshStep: 0
-  property string page: "inbox"
-  property string tab: "messages"
-  property var selectedThread: null
-  property var selectedNotice: null
-  property string replyDraft: ""
-  property bool wifiUp: false
-  property var lanDevices: []
-  property var lanPeers: []
-  property var pendingPair: null
-  property string clipPreview: ""
-  property string clipDraft: ""
-  property string filePath: ""
-  property var btFlags: ({ enabled: false, ancs: false, ancsContent: true, retention: "", retentionReady: false, groupMessages: false, callsEnabled: false, adapterPinned: "", adapterId: "", version: "" })
-  property var btStatus: ({ mode: "", bond: "", tether: "", classOk: false, adapters: [], adapterId: "", adapterPinned: "", raw: "" })
-  property var btSetup: ({ complete: true, text: "" })
-  property var cliCaps: ({ calls: false, adapter: true, forget: true })
+  property var contacts: []
   property var calls: []
-  property string dialDraft: ""
-  property string diagnosticsText: ""
-  property string copyOkNote: "Copied."
-  property string acceptDraft: ""
+  property var drafts: ({})
+  property var markedRead: ({})
+  property string contactQuery: ""
+  property string page: "inbox"
+  property var selectedThread: null
+  property string replyDraft: ""
+  property string composeTo: ""
+  property string composeBody: ""
+  property bool sending: false
   property string actionNote: ""
 
-  readonly property string displayText: Model.barLabel(status)
+  readonly property string socketPath: {
+    var runtime = Quickshell.env("XDG_RUNTIME_DIR")
+    return String(runtime || "/tmp") + "/tether/tetherd.sock"
+  }
+  readonly property bool socketUp: !!(socketLoader.item && socketLoader.item.connected)
   readonly property bool mapUp: status && status.map === true
+  readonly property int unreadCount: Model.unreadTotal(threads)
+  readonly property var ringingCall: Model.liveCall(calls)
+  readonly property string displayText: Model.barLabel(root.unreadCount, root.mapUp, root.daemonOk)
   readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
   readonly property bool popoutSwitchClosing: panelLoader.item ? panelLoader.item.popoutSwitchClosing === true : false
-  readonly property int readMaxBytes: 65536
-  readonly property int readTermSecs: 8
-  readonly property int readKillAfterSecs: 2
-  readonly property string boundCmd: Model.fileFromUrl("" + Qt.resolvedUrl("scripts/bounded-cmd.sh"))
-  readonly property string pickFileCmd: Model.fileFromUrl("" + Qt.resolvedUrl("scripts/pick-file.sh"))
-  readonly property var readWrap: [root.boundCmd, String(root.readMaxBytes), String(root.readTermSecs), String(root.readKillAfterSecs), "--"]
-
-  function boundCommand(argv) {
-    var c = root.readWrap.slice()
-    for (var i = 0; i < argv.length; i++) c.push(argv[i])
-    return c
-  }
 
   function setNote(msg) {
     root.actionNote = Model.neutralizeUi(msg)
   }
 
+  function sendCmd(obj) {
+    var sock = socketLoader.item
+    if (!sock || !sock.connected) return false
+    sock.write(JSON.stringify(obj) + "\n")
+    sock.flush()
+    return true
+  }
+
+  function pullState() {
+    root.sendCmd({ command: "bt_connection" })
+    root.sendCmd({ command: "bt_list_devices" })
+    root.sendCmd({ command: "bt_list_threads" })
+    root.sendCmd({ command: "bt_list_calls" })
+  }
+
+  function onSocketUp() {
+    root.daemonOk = true
+    root.reconnectAttempt = 0
+    root.sendCmd({ command: "subscribe" })
+    root.pullState()
+  }
+
+  function onSocketDown() {
+    root.daemonOk = false
+    root.sending = false
+    sendWatchdog.stop()
+  }
+
+  function handleLine(line) {
+    var ev = Model.parseEvent(line)
+    if (!ev) return
+    var cmd = ev.command
+    if (cmd === "bt_connection_changed") {
+      root.daemonOk = true
+      root.status = Model.parseConnection(ev)
+      return
+    }
+    if (cmd === "bt_threads") {
+      root.threads = Model.parseThreads(ev)
+      return
+    }
+    if (cmd === "bt_messages") {
+      var key = String(ev.thread || "")
+      if (!root.selectedThread || root.selectedThread.handle !== key) return
+      var msgs = Model.parseMessages(ev)
+      root.messages = msgs
+      root.markRead(msgs)
+      return
+    }
+    if (cmd === "bt_contacts") {
+      root.contacts = Model.parseContacts(ev)
+      return
+    }
+    if (cmd === "bt_devices") {
+      root.devices = Model.parseDevices(ev)
+      return
+    }
+    if (cmd === "bt_calls") {
+      root.calls = Model.parseCalls(ev)
+      return
+    }
+    if (cmd === "bt_message") {
+      root.sendCmd({ command: "bt_list_threads" })
+      if (root.selectedThread && ev.thread === root.selectedThread.handle)
+        root.loadMessages(root.selectedThread.handle)
+      return
+    }
+    if (cmd === "bt_send_result") {
+      root.sending = false
+      sendWatchdog.stop()
+      if (ev.success === true) {
+        root.replyDraft = ""
+        root.composeBody = ""
+        if (root.selectedThread) root.loadMessages(root.selectedThread.handle)
+        root.sendCmd({ command: "bt_list_threads" })
+      } else {
+        root.setNote(ev.message || "The message was not sent.")
+      }
+      return
+    }
+    if (cmd === "bt_message_read") {
+      root.sendCmd({ command: "bt_list_threads" })
+      return
+    }
+    if (cmd === "bt_solicit_result") {
+      root.setNote(ev.message || "Asked the iPhone to show its Bluetooth permissions.")
+      return
+    }
+    if (cmd === "bt_call_result") {
+      if (ev.success !== true)
+        root.setNote(ev.message || "The call could not be placed.")
+      root.sendCmd({ command: "bt_list_calls" })
+    }
+  }
+
   function open() {
     if (panelLoader.item) panelLoader.item.open()
-    root.refresh()
+    root.pullState()
   }
 
   function close() {
@@ -76,7 +153,7 @@ BarWidget {
 
   function togglePanel() {
     if (panelLoader.item) panelLoader.item.toggle()
-    if (!root.opened) root.refresh()
+    if (!root.opened) root.pullState()
   }
 
   function closeForPopoutSwitch() {
@@ -92,95 +169,61 @@ BarWidget {
     if ("hostWidget" in target) target.hostWidget = root
   }
 
-  function nextStep() {
-    root.refreshStep += 1
-    if (root.refreshStep === 1) {
-      if (!devProc.running) devProc.running = true
-    } else if (root.refreshStep === 2) {
-      if (!threadProc.running) threadProc.running = true
-    } else if (root.refreshStep === 3) {
-      if (!notifProc.running) notifProc.running = true
-    } else if (root.refreshStep === 4) {
-      if (!wifiProc.running) wifiProc.running = true
-    } else if (root.refreshStep === 5) {
-      if (root.wifiUp) {
-        if (!lanProc.running) lanProc.running = true
-      } else {
-        root.lanDevices = []
-        root.lanPeers = []
-        root.pendingPair = null
-        root.busy = false
-        root.refreshStep = 0
-        if (root.opened && root.tab === "settings")
-          root.loadSettings()
-        if (root.opened && root.tab === "calls")
-          root.loadCalls()
-        if (root.page === "thread" && root.selectedThread && root.selectedThread.handle)
-          root.loadMessages(root.selectedThread.handle)
-      }
-    } else {
-      root.busy = false
-      root.refreshStep = 0
-      if (root.opened && root.tab === "settings")
-        root.loadSettings()
-      if (root.opened && root.tab === "calls")
-        root.loadCalls()
-      if (root.opened && root.tab === "link")
-        root.loadLink()
-      if (root.page === "thread" && root.selectedThread && root.selectedThread.handle)
-        root.loadMessages(root.selectedThread.handle)
-    }
-  }
-
   function refresh() {
-    if (root.busy) return
-    root.busy = true
-    root.refreshStep = 0
-    if (!connProc.running) connProc.running = true
+    root.pullState()
   }
 
   function openApp() {
-    if (!launchProc.running) launchProc.running = true
+    Quickshell.execDetached(["uwsm-app", "--", "tether-gtk"])
   }
 
   function showInbox() {
+    if (root.page === "thread" && root.selectedThread)
+      root.stashDraft(root.selectedThread.handle, root.replyDraft)
     root.page = "inbox"
     root.selectedThread = null
-    root.selectedNotice = null
     root.messages = []
     root.replyDraft = ""
+    root.composeTo = ""
+    root.composeBody = ""
+    root.contacts = []
+    root.actionNote = ""
   }
 
-  function openThread(thread) {
-    if (!thread) return
-    root.selectedThread = thread
-    root.page = "thread"
-    root.tab = "messages"
+  function showCompose() {
+    root.stashDraft(root.selectedThread ? root.selectedThread.handle : "", root.replyDraft)
+    root.page = "compose"
+    root.selectedThread = null
+    root.messages = []
     root.replyDraft = ""
-    if (thread.handle) {
-      var seen = {}
-      var old = root.unreadSeen || {}
-      for (var k in old) seen[k] = old[k]
-      var n = thread.unread || 0
-      if (old[thread.handle] !== undefined && old[thread.handle] > n)
-        n = old[thread.handle]
-      seen[thread.handle] = n
-      root.unreadSeen = seen
-    }
-    root.loadMessages(thread.handle)
+    root.composeTo = ""
+    root.composeBody = ""
+    root.actionNote = ""
+    root.searchContacts("")
     if (panelLoader.item && !root.opened) panelLoader.item.open()
   }
 
-  function openNotice(notice) {
-    if (!notice) return
-    var match = Model.threadByName(root.threads, notice.app)
-    if (!match) match = Model.threadByName(root.threads, notice.title)
-    if (match && match.handle) {
-      root.openThread(match)
-      return
-    }
-    root.selectedNotice = notice
-    root.page = "notice"
+  function stashDraft(handle, text) {
+    if (!handle) return
+    var next = {}
+    var old = root.drafts || {}
+    for (var k in old) next[k] = old[k]
+    var t = String(text || "")
+    if (t) next[handle] = t
+    else delete next[handle]
+    root.drafts = next
+  }
+
+  function openThread(thread) {
+    if (!thread || !thread.handle) return
+    if (root.page === "thread" && root.selectedThread)
+      root.stashDraft(root.selectedThread.handle, root.replyDraft)
+    root.selectedThread = thread
+    root.page = "thread"
+    root.replyDraft = (root.drafts && root.drafts[thread.handle]) || ""
+    root.actionNote = ""
+    root.threads = Model.zeroUnread(root.threads, thread.handle)
+    root.loadMessages(thread.handle)
     if (panelLoader.item && !root.opened) panelLoader.item.open()
   }
 
@@ -189,234 +232,68 @@ BarWidget {
       root.messages = []
       return
     }
-    msgProc.command = root.boundCommand(["tether", "--bt-messages", handle])
-    if (!msgProc.running) msgProc.running = true
+    root.sendCmd({ command: "bt_list_messages", thread: handle })
   }
 
-  function normalizeHandle(value) {
-    var h = String(value || "").trim()
-    if (!h) return ""
-    if (h.indexOf("tel:") === 0 || h.indexOf("mailto:") === 0) return h
-    if (h.indexOf("@") >= 0) return "mailto:" + h
-    return "tel:" + h.replace(/[^+\d]/g, "")
+  function markRead(msgs) {
+    var handles = Model.unreadHandles(msgs)
+    var pending = []
+    var seen = {}
+    var old = root.markedRead || {}
+    for (var k in old) seen[k] = old[k]
+    for (var i = 0; i < handles.length; i++) {
+      if (seen[handles[i]]) continue
+      pending.push(handles[i])
+      seen[handles[i]] = true
+    }
+    if (!pending.length) return
+    root.markedRead = seen
+    root.sendCmd({ command: "bt_mark_read", handles: pending, read: true })
   }
 
   function sendTo(handle, text) {
-    var h = root.normalizeHandle(handle)
-    var t = String(text || "").trim()
+    var h = Model.normalizeHandle(handle)
+    var t = String(text || "").replace(/^\s+|\s+$/g, "")
     if (!h || !t) return false
-    if (sendProc.running) {
+    if (root.sending) {
       root.setNote("Still sending the previous message.")
       return false
     }
-    sendProc.command = ["tether", "--bt-send", h, t]
-    sendProc.running = true
+    if (!root.sendCmd({ command: "bt_send_message", thread: h, body: t })) {
+      root.setNote("Tether is not running.")
+      return false
+    }
+    root.sending = true
+    sendWatchdog.restart()
     return true
   }
 
   function sendReply() {
-    var thread = root.selectedThread
-    if (!thread) return
-    root.sendTo(thread.handle, root.replyDraft)
+    if (!root.selectedThread) return false
+    return root.sendTo(root.selectedThread.handle, root.replyDraft)
   }
 
-  function solicit() {
-    if (!solicitProc.running) solicitProc.running = true
-  }
-
-  function sendFile() {
-    var p = String(root.filePath || "").trim()
-    if (!p || !root.wifiUp) return
-    fileProc.command = ["tether", "-f", p]
-    if (!fileProc.running) fileProc.running = true
-  }
-
-  function pullClipboard() {
-    if (!root.wifiUp) return
-    if (!clipProc.running) clipProc.running = true
-  }
-
-  function loadLink() {
-    if (!root.wifiUp) {
-      root.lanPeers = []
-      root.pendingPair = null
-      return
+  function sendNew() {
+    var h = Model.normalizeHandle(root.composeTo)
+    if (!root.sendTo(h, root.composeBody)) return false
+    var match = Model.threadByHandle(root.threads, h)
+    if (match) {
+      root.openThread(match)
+    } else {
+      root.openThread({
+        handle: h,
+        name: root.composeTo.replace(/^\s+|\s+$/g, "") || h,
+        address: h,
+        preview: "",
+        timestamp: 0,
+        unread: 0,
+        count: 0,
+        group: false,
+        repliable: true,
+        replyReason: ""
+      })
     }
-    if (!lanProc.running) lanProc.running = true
-    if (!discProc.running) discProc.running = true
-    if (!pairLogProc.running) pairLogProc.running = true
-    root.pullClipboard()
-  }
-
-  function pairLan(peer) {
-    var t = Model.pairTarget(peer)
-    if (!t || !t.ip) {
-      root.acceptPending()
-      return
-    }
-    if (!root.wifiUp) {
-      root.setNote("Needs LAN.")
-      return
-    }
-    root.setNote("Sending pair request to " + (peer.name || t.ip) + "…")
-    lanPairProc.command = ["tether", "--pair", "--host", String(t.ip), "--port", String(t.port || 5134)]
-    if (!lanPairProc.running) lanPairProc.running = true
-  }
-
-  function forgetLan(fp) {
-    var f = String(fp || "").trim()
-    if (!f || !root.wifiUp) return
-    root.setNote("Forgetting Wi-Fi pairing…")
-    forgetProc.command = ["tether", "--forget", f]
-    if (!forgetProc.running) forgetProc.running = true
-  }
-
-  function acceptPending() {
-    var p = root.pendingPair
-    var fp = p && p.fingerprint ? String(p.fingerprint).trim() : ""
-    if (!fp) {
-      root.setNote("Open Tether on the iPhone first. When it asks to pair with this PC, Accept here.")
-      return
-    }
-    root.acceptDraft = fp
-    root.acceptPair()
-  }
-
-  function pushClipboard() {
-    var t = String(root.clipDraft !== "" ? root.clipDraft : root.clipPreview)
-    if (!t || !root.wifiUp) return
-    pushProc.command = ["bash", "-c", "printf '%s' \"$1\" | tether -s", "omamessage-clip", t]
-    if (!pushProc.running) pushProc.running = true
-  }
-
-  function sendDropped(url) {
-    var p = Model.fileFromUrl(url)
-    if (!p || !root.wifiUp) return
-    root.filePath = p
-    root.sendFile()
-  }
-
-  function browseFile() {
-    if (!root.wifiUp || browseProc.running || pickTimer.running) return
-    root.tab = "link"
-    root.showInbox()
-    root.close()
-    pickTimer.restart()
-  }
-
-  function pairBt(addr, explicit) {
-    var a = String(addr || "").trim()
-    if (!a) return
-    root.setNote(explicit ? "Pairing with explicit-pair…" : "Pairing over Bluetooth…")
-    pairProc.command = explicit
-      ? ["tether", "--bt-pair", a, "--explicit-pair"]
-      : ["tether", "--bt-pair", a]
-    if (!pairProc.running) pairProc.running = true
-  }
-
-  function unpairBt(addr) {
-    var a = String(addr || "").trim()
-    if (!a) return
-    root.setNote("Removing Bluetooth bond…")
-    unpairProc.command = ["tether", "--bt-unpair", a]
-    if (!unpairProc.running) unpairProc.running = true
-  }
-
-  function setBtFlag(which, on) {
-    var next = {
-      enabled: root.btFlags.enabled,
-      ancs: root.btFlags.ancs,
-      ancsContent: root.btFlags.ancsContent,
-      retention: root.btFlags.retention || "",
-      retentionReady: root.btFlags.retentionReady === true,
-      groupMessages: root.btFlags.groupMessages === true,
-      callsEnabled: root.btFlags.callsEnabled === true,
-      adapterPinned: root.btFlags.adapterPinned || "",
-      adapterId: root.btFlags.adapterId || "",
-      version: root.btFlags.version || ""
-    }
-    if (which === "enabled") next.enabled = on
-    else if (which === "ancs") next.ancs = on
-    else if (which === "ancsContent") next.ancsContent = on
-    else if (which === "callsEnabled") next.callsEnabled = on
-    else return
-    root.btFlags = next
-    var flag = which === "enabled" ? "--bt-enable"
-      : (which === "ancs" ? "--bt-ancs"
-        : (which === "ancsContent" ? "--bt-ancs-content" : "--bt-calls-enable"))
-    root.setNote("Updating Tether…")
-    flagProc.command = ["tether", flag, on ? "on" : "off"]
-    if (!flagProc.running) flagProc.running = true
-  }
-
-  function setAdapter(id) {
-    var a = String(id || "auto").trim()
-    if (!a) a = "auto"
-    root.setNote(a === "auto" ? "Using the first powered Bluetooth controller…" : ("Using " + a + "…"))
-    adapterProc.command = ["tether", "--bt-adapter", a]
-    if (!adapterProc.running) adapterProc.running = true
-  }
-
-  function copyText(text, okNote) {
-    var t = String(text || "")
-    if (!t) {
-      root.setNote("Nothing to copy.")
-      return
-    }
-    copyProc.command = ["bash", "-c", "printf '%s' \"$1\" | wl-copy 2>/dev/null || printf '%s' \"$1\" | tether -s", "omamessage-copy", t]
-    root.copyOkNote = okNote || "Copied."
-    if (!copyProc.running) copyProc.running = true
-  }
-
-  function copySetup() {
-    root.copyText(root.btSetup && root.btSetup.text ? root.btSetup.text : "", "Setup commands copied.")
-  }
-
-  function copyDiagnostics() {
-    root.copyText(root.diagnosticsText, "Diagnostics copied. Safe to paste into a Tether bug report.")
-  }
-
-  function loadCalls() {
-    if (!(root.cliCaps && root.cliCaps.calls)) {
-      root.calls = []
-      return
-    }
-    if (!callsProc.running) callsProc.running = true
-  }
-
-  function dialNumber(number) {
-    var n = String(number || root.dialDraft || "").replace(/[^\d+]/g, "")
-    if (!n) return
-    root.setNote("Dialing…")
-    dialProc.command = ["tether", "--bt-call", n]
-    if (!dialProc.running) dialProc.running = true
-  }
-
-  function answerCall() {
-    root.setNote("Answering…")
-    answerProc.command = ["tether", "--bt-answer"]
-    if (!answerProc.running) answerProc.running = true
-  }
-
-  function hangupCall() {
-    root.setNote("Hanging up…")
-    hangupProc.command = ["tether", "--bt-hangup"]
-    if (!hangupProc.running) hangupProc.running = true
-  }
-
-  function acceptPair() {
-    var fp = String(root.acceptDraft || "").trim()
-    if (!fp || !root.wifiUp) return
-    root.setNote("Accepting iOS pairing…")
-    acceptProc.command = ["tether", "--accept", fp]
-    if (!acceptProc.running) acceptProc.running = true
-  }
-
-  function loadSettings() {
-    if (!statusProc.running) statusProc.running = true
-    if (!setupProc.running) setupProc.running = true
-    if (!diagProc.running) diagProc.running = true
-    if (!helpProc.running) helpProc.running = true
+    return true
   }
 
   function searchContacts(q) {
@@ -425,20 +302,11 @@ BarWidget {
   }
 
   function loadContacts() {
-    var q = Model.contactQueryArg(root.contactQuery)
-    contactProc.command = q
-      ? root.boundCommand(["tether", "--bt-contacts", q])
-      : root.boundCommand(["tether", "--bt-contacts"])
-    if (!contactProc.running) contactProc.running = true
-  }
-
-  function openContact(c) {
-    if (!c) return
-    root.openContactHandle(c, c.handle)
+    root.sendCmd({ command: "bt_list_contacts", query: root.contactQuery })
   }
 
   function openContactHandle(c, handle) {
-    var h = String(handle || "").trim()
+    var h = Model.normalizeHandle(handle)
     if (!h) {
       root.setNote("No phone or email for that contact.")
       return
@@ -448,25 +316,47 @@ BarWidget {
       root.openThread(match)
       return
     }
+    root.composeTo = h
     root.openThread({
-      name: (c && c.name) || h,
       handle: h,
-      time: "",
+      name: (c && c.name) || h,
+      address: h,
       preview: "",
-      unread: 0
+      timestamp: 0,
+      unread: 0,
+      count: 0,
+      group: false,
+      repliable: true,
+      replyReason: ""
     })
   }
 
-  function setRetention(mode) {
-    var m = Model.parseRetention(mode)
-    if (!m) return
-    root.setNote("Updating how messages and contacts are kept on disk…")
-    retentionProc.command = ["tether", "--bt-retention", m]
-    if (!retentionProc.running) retentionProc.running = true
+  function solicit() {
+    if (!root.sendCmd({ command: "bt_solicit" }))
+      root.setNote("Tether is not running.")
   }
 
-  onWifiUpChanged: {
-    // Keep Link visible; Wi-Fi-only actions disable themselves.
+  function answerCall() {
+    var c = root.ringingCall
+    var msg = { command: "bt_call_action", action: "answer" }
+    if (c && c.path) msg.path = c.path
+    if (!root.sendCmd(msg))
+      root.setNote("Tether is not running.")
+  }
+
+  function hangupCall() {
+    var c = root.ringingCall
+    var msg = { command: "bt_call_action", action: "hangup" }
+    if (c && c.path) msg.path = c.path
+    if (!root.sendCmd(msg))
+      root.setNote("Tether is not running.")
+  }
+
+  function copyText(text) {
+    var t = String(text || "")
+    if (!t) return
+    Quickshell.execDetached(["bash", "-c", "printf %s " + Util.shellQuote(t) + " | wl-copy"])
+    root.setNote("Copied.")
   }
 
   implicitWidth: button.implicitWidth
@@ -474,13 +364,9 @@ BarWidget {
 
   onBarChanged: injectPanel()
   onSettingsChanged: injectPanel()
-  Component.onCompleted: refresh()
-
-  Timer {
-    interval: 8000
-    running: true
-    repeat: true
-    onTriggered: root.refresh()
+  Component.onCompleted: {
+    socketLoader.active = true
+    injectPanel()
   }
 
   Timer {
@@ -491,494 +377,51 @@ BarWidget {
   }
 
   Timer {
-    id: pickTimer
-    interval: 200
+    id: sendWatchdog
+    interval: 60000
     repeat: false
     onTriggered: {
-      browseProc.command = [root.pickFileCmd]
-      if (!browseProc.running) browseProc.running = true
+      root.sending = false
+      root.setNote("Send timed out.")
     }
   }
 
-  Process {
-    id: connProc
-    command: root.readWrap.concat(["tether", "--bt-connection"])
-    stdout: StdioCollector {
-      id: connOut
-      waitForEnd: true
-    }
-    onExited: function(code) {
-      if (Model.readRejected(code)) {
-        root.nextStep()
-        return
+  Component {
+    id: socketComponent
+    Socket {
+      path: root.socketPath
+      connected: true
+      parser: SplitParser {
+        splitMarker: "\n"
+        onRead: function(line) { root.handleLine(line) }
       }
-      if (code === 0) {
-        root.status = Model.parseConnection(connOut.text)
-        root.cliOk = true
-      } else {
-        root.cliOk = false
-        root.status = Model.parseConnection("")
-      }
-      root.nextStep()
-    }
-  }
-
-  Process {
-    id: devProc
-    command: root.readWrap.concat(["tether", "--bt-devices"])
-    stdout: StdioCollector {
-      id: devOut
-      waitForEnd: true
-    }
-    onExited: function(code) {
-      if (!Model.readRejected(code))
-        root.devices = Model.parseDevices(devOut.text)
-      root.nextStep()
-    }
-  }
-
-  Process {
-    id: threadProc
-    command: root.readWrap.concat(["tether", "--bt-threads"])
-    stdout: StdioCollector {
-      id: threadOut
-      waitForEnd: true
-    }
-    onExited: function(code) {
-      if (!Model.readRejected(code))
-        root.threads = Model.parseThreads(threadOut.text)
-      root.nextStep()
-    }
-  }
-
-  Process {
-    id: notifProc
-    command: root.readWrap.concat(["tether", "--bt-notifications"])
-    stdout: StdioCollector {
-      id: notifOut
-      waitForEnd: true
-    }
-    onExited: function(code) {
-      if (!Model.readRejected(code))
-        root.notifications = Model.parseNotifications(notifOut.text)
-      root.nextStep()
-    }
-  }
-
-  Process {
-    id: contactProc
-    command: root.readWrap.concat(["tether", "--bt-contacts"])
-    stdout: StdioCollector {
-      id: contactOut
-      waitForEnd: true
-    }
-    onExited: function(code) {
-      if (!Model.readRejected(code))
-        root.contacts = Model.parseContacts(contactOut.text)
-      var q = Model.contactQueryArg(root.contactQuery)
-      var asked = ""
-      var cmd = contactProc.command || []
-      var last = cmd.length ? String(cmd[cmd.length - 1]) : ""
-      if (last && last !== "--bt-contacts") asked = last
-      if (q !== asked && !contactProc.running)
-        root.loadContacts()
-    }
-  }
-
-  Process {
-    id: msgProc
-    command: root.readWrap.concat(["tether", "--bt-messages", ""])
-    stdout: StdioCollector {
-      id: msgOut
-      waitForEnd: true
-    }
-    onExited: function(code) {
-      if (!Model.readRejected(code))
-        root.messages = Model.parseMessages(msgOut.text)
-    }
-  }
-
-  Process {
-    id: sendProc
-    command: ["tether", "--bt-send", "", ""]
-    onExited: function(code) {
-      if (code === 0) {
-        root.replyDraft = ""
-        if (root.selectedThread) root.loadMessages(root.selectedThread.handle)
-        root.refresh()
+      onConnectionStateChanged: {
+        if (connected) root.onSocketUp()
+        else root.onSocketDown()
       }
     }
   }
 
-  Process {
-    id: wifiProc
-    command: root.readWrap.concat(["nmcli", "-t", "-f", "DEVICE,TYPE,STATE", "device"])
-    stdout: StdioCollector {
-      id: wifiOut
-      waitForEnd: true
-    }
-    onExited: function(code) {
-      if (Model.readRejected(code)) {
-        root.nextStep()
-        return
+  Loader {
+    id: socketLoader
+    active: false
+    sourceComponent: socketComponent
+  }
+
+  Timer {
+    id: reconnectTimer
+    interval: 1500
+    repeat: true
+    running: !root.socketUp
+    onTriggered: {
+      if (!root.spawnAttempted) {
+        root.spawnAttempted = true
+        Quickshell.execDetached(["tether", "--bt-connection"])
       }
-      root.wifiUp = code === 0 && Model.lanConnected(wifiOut.text)
-      root.nextStep()
+      root.reconnectAttempt = Math.min(12, root.reconnectAttempt + 1)
+      socketLoader.active = false
+      socketLoader.active = true
     }
-  }
-
-  Process {
-    id: lanProc
-    command: root.readWrap.concat(["tether", "--list-devices"])
-    stdout: StdioCollector {
-      id: lanOut
-      waitForEnd: true
-    }
-    onExited: function(code) {
-      if (!Model.readRejected(code))
-        root.lanDevices = Model.parseLanDevices(lanOut.text)
-      if (root.busy) root.nextStep()
-    }
-  }
-
-  Process {
-    id: discProc
-    command: root.readWrap.concat(["tether", "--discover", "--timeout", "2000"])
-    stdout: StdioCollector {
-      id: discOut
-      waitForEnd: true
-    }
-    onExited: function(code) {
-      if (!Model.readRejected(code))
-        root.lanPeers = Model.remoteLanPeers(Model.parseDiscover(discOut.text))
-    }
-  }
-
-  Process {
-    id: pairLogProc
-    command: root.readWrap.concat(["bash", "-c", "tail -c 65536 -- \"$HOME/.local/state/tether/tetherd.log\" 2>/dev/null | grep -E 'Pairing Request Pending|Pairing Accepted|Pairing Rejected' | tail -n 30"])
-    stdout: StdioCollector {
-      id: pairLogOut
-      waitForEnd: true
-    }
-    onExited: function(code) {
-      if (!Model.readRejected(code))
-        root.pendingPair = Model.parsePendingPair(pairLogOut.text)
-    }
-  }
-
-  Process {
-    id: clipProc
-    command: root.readWrap.concat(["tether", "-g"])
-    stdout: StdioCollector {
-      id: clipOut
-      waitForEnd: true
-    }
-    onExited: function(code) {
-      if (Model.readRejected(code)) return
-      root.clipPreview = Model.clipPreview(clipOut.text)
-      root.clipDraft = root.clipPreview
-    }
-  }
-
-  Process {
-    id: fileProc
-    command: ["tether", "-f", ""]
-    onExited: function(code) {
-      if (code === 0) root.filePath = ""
-    }
-  }
-
-  Process {
-    id: pushProc
-    command: ["tether", "-s"]
-    onExited: function(code) {
-      root.setNote(code === 0
-        ? (root.lanDevices.length > 0 ? "Clipboard pushed to Tether." : "Copied on this PC. Pair the iOS app on Link to sync to the phone.")
-        : "Clipboard push failed.")
-    }
-  }
-
-  Process {
-    id: pairProc
-    command: ["tether", "--bt-pair", ""]
-    onExited: function(code) {
-      root.setNote(code === 0
-        ? "Pairing started. Confirm the code on the iPhone. Prefer Open Tether if no dialog appears."
-        : "Pairing failed. Open Tether to confirm the code, or try explicit-pair in Settings.")
-      root.refresh()
-    }
-  }
-
-  Process {
-    id: unpairProc
-    command: ["tether", "--bt-unpair", ""]
-    onExited: function(code) {
-      root.setNote(code === 0 ? "Bluetooth bond removed." : "Could not unpair.")
-      root.refresh()
-    }
-  }
-
-  Process {
-    id: flagProc
-    command: ["tether", "--bt-enable", "on"]
-    onExited: function(code) {
-      root.setNote(code === 0 ? "Tether Bluetooth setting updated." : "Could not update that Tether setting.")
-      root.refresh()
-      root.loadSettings()
-    }
-  }
-
-  Process {
-    id: retentionProc
-    command: ["tether", "--bt-retention", "encrypted"]
-    stdout: StdioCollector {
-      id: retentionOut
-      waitForEnd: true
-    }
-    onExited: function(code) {
-      var msg = Model.clipPreview(retentionOut.text)
-      if (code === 0)
-        root.setNote(msg || "On-disk retention updated.")
-      else
-        root.setNote(msg || "Could not update on-disk retention.")
-      root.loadSettings()
-    }
-  }
-
-  Process {
-    id: lanPairProc
-    command: ["tether", "--pair", "--host", "127.0.0.1", "--port", "5134"]
-    onExited: function(code) {
-      root.setNote(code === 0
-        ? "Pair request sent. Approve on the iPhone."
-        : "Pair request failed. Open Tether on the iPhone and Accept here.")
-      root.loadLink()
-    }
-  }
-
-  Process {
-    id: forgetProc
-    command: ["tether", "--forget", ""]
-    onExited: function(code) {
-      root.setNote(code === 0 ? "Forgot that Wi-Fi pairing." : "Could not forget that pairing.")
-      root.refresh()
-      root.loadLink()
-    }
-  }
-
-  Process {
-    id: adapterProc
-    command: ["tether", "--bt-adapter", "auto"]
-    stdout: StdioCollector {
-      id: adapterOut
-      waitForEnd: true
-    }
-    onExited: function(code) {
-      var msg = Model.clipPreview(adapterOut.text)
-      root.setNote(code === 0 ? (msg || "Bluetooth controller updated.") : (msg || "Could not change controller."))
-      root.loadSettings()
-      root.refresh()
-    }
-  }
-
-  Process {
-    id: copyProc
-    command: ["bash", "-c", "true"]
-    onExited: function(code) {
-      root.setNote(code === 0 ? root.copyOkNote : "Could not copy.")
-    }
-  }
-
-  Process {
-    id: helpProc
-    command: root.readWrap.concat(["tether", "--help"])
-    stdout: StdioCollector {
-      id: helpOut
-      waitForEnd: true
-    }
-    onExited: function(code) {
-      if (!Model.readRejected(code))
-        root.cliCaps = Model.parseCliCaps(helpOut.text)
-    }
-  }
-
-  Process {
-    id: callsProc
-    command: root.readWrap.concat(["tether", "--bt-calls"])
-    stdout: StdioCollector {
-      id: callsOut
-      waitForEnd: true
-    }
-    onExited: function(code) {
-      if (!Model.readRejected(code))
-        root.calls = Model.parseCalls(callsOut.text)
-    }
-  }
-
-  Process {
-    id: dialProc
-    command: ["tether", "--bt-call", ""]
-    onExited: function(code) {
-      root.setNote(code === 0 ? "Dialing." : "Could not place the call. Call control may be off.")
-      root.loadCalls()
-    }
-  }
-
-  Process {
-    id: answerProc
-    command: ["tether", "--bt-answer"]
-    onExited: function(code) {
-      root.setNote(code === 0 ? "Answering." : "Could not answer.")
-      root.loadCalls()
-    }
-  }
-
-  Process {
-    id: hangupProc
-    command: ["tether", "--bt-hangup"]
-    onExited: function(code) {
-      root.setNote(code === 0 ? "Hanging up." : "Could not hang up.")
-      root.loadCalls()
-    }
-  }
-
-  Process {
-    id: acceptProc
-    command: ["tether", "--accept", ""]
-    onExited: function(code) {
-      if (code === 0) {
-        root.acceptDraft = ""
-        root.pendingPair = null
-        root.setNote("Accepted iOS pairing.")
-      } else {
-        root.setNote("Accept failed. Open Tether on the iPhone so it can ask this PC to pair.")
-      }
-      root.refresh()
-      root.loadLink()
-    }
-  }
-
-  Process {
-    id: statusProc
-    command: root.readWrap.concat(["tether", "--bt-status"])
-    stdout: StdioCollector {
-      id: statusOut
-      waitForEnd: true
-    }
-    onExited: function(code) {
-      if (Model.readRejected(code)) return
-      var st = Model.parseBtStatus(statusOut.text)
-      st.adapterPinned = (root.btFlags && root.btFlags.adapterPinned) || (root.btStatus && root.btStatus.adapterPinned) || ""
-      root.btStatus = st
-    }
-  }
-
-  Process {
-    id: setupProc
-    command: root.readWrap.concat(["tether", "--bt-setup"])
-    stdout: StdioCollector {
-      id: setupOut
-      waitForEnd: true
-    }
-    onExited: function(code) {
-      if (!Model.readRejected(code))
-        root.btSetup = Model.parseBtSetup(setupOut.text)
-    }
-  }
-
-  Process {
-    id: diagProc
-    command: root.readWrap.concat(["tether", "--bt-diagnostics"])
-    stdout: StdioCollector {
-      id: diagOut
-      waitForEnd: true
-    }
-    onExited: function(code) {
-      if (Model.readRejected(code)) return
-      var d = Model.parseDiagnostics(diagOut.text)
-      root.btFlags = d
-      root.diagnosticsText = String(diagOut.text || "")
-      var st = Model.parseBtStatus(root.btStatus && root.btStatus.raw ? root.btStatus.raw : "")
-      if (root.btStatus && root.btStatus.adapters)
-        st = root.btStatus
-      st.adapterPinned = d.adapterPinned
-      if (d.adapterId) st.adapterId = d.adapterId
-      root.btStatus = {
-        mode: st.mode,
-        bond: st.bond,
-        tether: st.tether,
-        classOk: st.classOk,
-        adapters: st.adapters || [],
-        adapterId: st.adapterId || d.adapterId,
-        adapterPinned: d.adapterPinned,
-        raw: st.raw
-      }
-    }
-  }
-
-  Process {
-    id: browseProc
-    command: ["true"]
-    stdout: StdioCollector {
-      id: browseOut
-      waitForEnd: true
-    }
-    onExited: function(code) {
-      if (code === 0) {
-        var p = String(browseOut.text || "").trim()
-        if (p) {
-          root.filePath = p
-          var slash = p.lastIndexOf("/")
-          root.setNote("Selected " + (slash >= 0 ? p.slice(slash + 1) : p))
-        }
-      }
-      root.tab = "link"
-      root.showInbox()
-      root.open()
-    }
-  }
-
-  FileView {
-    id: hostsFile
-    path: Quickshell.env("HOME") + "/.config/tether/known_hosts.json"
-    watchChanges: true
-    printErrors: false
-    onFileChanged: reload()
-    onLoaded: {
-      var raw = text()
-      if (!raw || raw.length > root.readMaxBytes) return
-      var parsed = Model.parseLanDevices(raw)
-      if (parsed.length > 0) root.lanDevices = parsed
-    }
-  }
-
-  Process {
-    id: solicitProc
-    command: root.readWrap.concat(["tether", "--bt-solicit"])
-    stdout: StdioCollector {
-      id: solicitOut
-      waitForEnd: true
-    }
-    onExited: function(code) {
-      if (Model.readRejected(code)) {
-        root.refresh()
-        return
-      }
-      var msg = Model.clipPreview(solicitOut.text)
-      if (msg) root.setNote(msg)
-      else {
-        root.setNote(code === 0
-          ? "Asked the iPhone to re-offer notification access. If Notify stays dark, turn Bluetooth off and on on the iPhone."
-          : "Could not re-advertise permissions.")
-      }
-      root.refresh()
-    }
-  }
-
-  Process {
-    id: launchProc
-    command: ["uwsm-app", "--", "tether-gtk"]
   }
 
   Loader {
@@ -994,7 +437,7 @@ BarWidget {
 
   IpcHandler {
     target: "io.github.charleschao.omamessage"
-    function refresh(): void { root.refresh() }
+    function refresh(): void { root.broadcast("refresh") }
     function open(): void { root.open() }
     function close(): void { root.close() }
     function show(): void { root.open() }
@@ -1002,24 +445,9 @@ BarWidget {
     function toggle(): void { root.togglePanel() }
     function app(): void { root.openApp() }
     function inbox(): void { root.showInbox() }
-    function settings(): void {
-      root.showInbox()
-      root.tab = "settings"
-      root.open()
-      root.loadSettings()
-    }
-    function contacts(): void {
-      root.showInbox()
-      root.tab = "contacts"
-      root.open()
-      root.loadContacts()
-    }
-    function calls(): void {
-      root.showInbox()
-      root.tab = "calls"
-      root.open()
-      root.loadCalls()
-    }
+    function settings(): void { root.openApp() }
+    function contacts(): void { root.showCompose() }
+    function calls(): void { root.open() }
   }
 
   WidgetButton {
@@ -1027,7 +455,7 @@ BarWidget {
     anchors.fill: parent
     bar: root.bar
     text: root.displayText
-    tooltipText: Model.neutralizeUi(Model.statusTitle(root.status))
+    tooltipText: Model.neutralizeUi(Model.statusTitle(root.status, root.daemonOk))
     dimmed: !root.mapUp
     onPressed: function(b) {
       if (b === Qt.MiddleButton) root.openApp()

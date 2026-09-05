@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.0] — 2026-09-05
+
+- Inbox only: search, conversations, reply, new message. No Settings / Link / Notify / Calls / Contacts tabs.
+- Talk JSON to `$XDG_RUNTIME_DIR/tether/tetherd.sock` (live events, mark-read, groups, contact typeahead).
+- Bar shows **Messages** or the unread count.
+- Relative times, day headings, grouped bubbles, clickable links, OTP copy chip.
+- Incoming call banner. First-run empty state opens Tether.
+- Keyboard: j/k, Enter, Esc, `/` search, `n` new message.
+
 ## [0.3.11] — 2026-09-04
 
 - Settings: Bluetooth controller (`--bt-adapter`), per-device pair, copy setup commands, copy diagnostics

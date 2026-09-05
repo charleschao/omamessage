@@ -1,10 +1,10 @@
 # Omamessage
 
-Omarchy bar widget for iPhone SMS, iMessage, notifications, clipboard, and files — driven by [Tether](https://github.com/zackb/tether) by **Zack Bartel**.
+Omarchy bar inbox for iPhone SMS and iMessage — driven by [Tether](https://github.com/zackb/tether) by **Zack Bartel**.
 
 Tether’s advantage over [BlueBubbles](https://bluebubbles.app/) is that you do **not** need a Mac or a macOS VM running in the background. Continuity-style features talk to the iPhone from Linux.
 
-**Requires Tether by Zack Bartel installed separately.** Omamessage is not Apple iMessage, not a Tether fork, and not a standalone messenger. It does not bundle `tetherd`, `tether-gtk`, or the iOS app. If `tether` is missing from `PATH`, the widget has nothing to show.
+**Requires Tether by Zack Bartel installed separately.** Omamessage is not Apple iMessage, not a Tether fork, and not a standalone messenger. It does not bundle `tetherd`, `tether-gtk`, or the iOS app. If `tetherd` is not running, the widget has nothing to show.
 
 ## Required: install Tether first
 
@@ -58,30 +58,28 @@ Removing the bar widget does not stop Messages if `tetherd` / `tether-gtk` still
 - [Omarchy](https://omarchy.org/) with the Quattro shell
 - [Tether](https://github.com/zackb/tether) by **Zack Bartel** (`tether` + `tetherd` on `PATH`; Arch: `tether-bin` or `tether`)
 - An iPhone paired over Bluetooth with **Show Message Notifications** and **Sync Contacts** enabled
-- Optional: Tether iOS app on the same LAN (Wi-Fi or ethernet) for clipboard and file transfer
 - `tetherd` must stay running (holds the Bluetooth MAP session)
 
 ## Features
 
-- Hero status plus the paired iPhone name
-- Messages: conversation list (unread dots), transcript, reply, new message
-- Contacts (inbox footer, left): search iPhone contacts (PBAP); every phone and email Tether returns; tap one to chat
-- Notifications: mirrored ANCS (needs Bluetooth LE); re-advertise permissions
-- Link (always visible): discover / accept / pair / forget the iOS app, clipboard pull/push, file drop or Browse (`~/Downloads`)
-- Settings: MAP / notification / call-control toggles, on-disk retention, Bluetooth controller, pair / explicit-pair / unpair, copy `--bt-setup` commands and diagnostics
-- Calls (when Tether CLI has `--bt-calls`): dial, answer, hang up; audio stays on the iPhone
+- Bar label: **Messages**, or the unread count when the phone link is up
+- Conversation list with search (`/`), unread badges, relative times
+- Transcript with day headings, grouped bubbles, clickable links
+- Reply, new message (`n`) with contact typeahead
+- Copy a verification code when an SMS is a one-time code
+- Incoming call banner (audio stays on the iPhone)
 - Follows the Omarchy light or dark theme (`omarchy theme set`)
-- Middle-click the bar label, or footer **Open Tether** (right): `tether-gtk`
+- Middle-click the bar label, or first-run **Open Tether**: `tether-gtk`
 
-Clipboard, files, and iOS pairing **disable while this PC has no LAN** (ethernet counts). Bluetooth messages still work. GTK “connected” is not the same as a pinned `tetherd` pair (`tether --list-devices`).
+Keyboard: `j`/`k` move, Enter open, Esc back, `/` search, `n` new message.
 
-Not in this bar (they stay in Tether): OTP / TOTP vault, Firefox and Thunderbird add-ons, native-messaging host.
+Clipboard, files, pairing, Bluetooth setup, and notification popups stay in Tether. The bar is the inbox.
 
 Car-kit limits (groups, tapbacks, attachments, no blue/green bubbles) are Tether/iOS MAP, not this UI.
 
 ## Credit
 
-Tether — daemon, GTK app, iOS companion, Bluetooth MAP/ANCS — is by **Zack Bartel** (`zackb`). Omamessage only calls the local `tether` CLI.
+Tether — daemon, GTK app, iOS companion, Bluetooth MAP/ANCS — is by **Zack Bartel** (`zackb`). Omamessage only talks to the local daemon.
 
 - https://github.com/zackb/tether
 - Author: Zack Bartel
