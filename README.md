@@ -8,10 +8,9 @@ Tether’s advantage over [BlueBubbles](https://bluebubbles.app/) is that you do
 
 ## Required: install Tether first
 
-Arch:
+Arch: install the `tether-bin` package from the AUR, then:
 
 ```sh
-yay -S tether-bin
 tether --bt-setup    # follow the printed BlueZ steps once
 ```
 
@@ -51,7 +50,9 @@ omarchy plugin validate .
 omarchy plugin remove io.github.charleschao.omamessage
 ```
 
-Removing the bar widget does not stop Messages if `tetherd` / `tether-gtk` still talk to the phone.
+This plugin writes no state, cache, or credentials of its own. Removal deletes the widget from the Omarchy plugins directory.
+
+It does **not** stop or uninstall Tether. `tetherd`, `tether-gtk`, pairing, and anything Tether stored stay until you remove Tether itself.
 
 ## Requirements
 

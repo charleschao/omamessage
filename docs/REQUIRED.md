@@ -8,6 +8,8 @@ It is a bar inbox that talks newline JSON to:
 $XDG_RUNTIME_DIR/tether/tetherd.sock
 ```
 
+`XDG_RUNTIME_DIR` must be set. The widget does not fall back to `/tmp`.
+
 The same socket `tether-gtk` uses. Typical commands:
 
 - `subscribe`

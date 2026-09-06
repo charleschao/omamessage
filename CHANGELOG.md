@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.3] — 2026-09-06
+
+- Open only `https` message links (no userinfo, no IP or localhost)
+- Copy OTP through `wl-copy` stdin, not `bash -c` argv
+- Require `XDG_RUNTIME_DIR`; do not fall back to `/tmp`
+- Cap tetherd socket lines before newline assembly
+- IPC no longer launches `tether-gtk`; middle-click and **Open Tether** still do
+- Do not spawn `tether` when the socket is down
+
 ## [0.4.2] — 2026-09-05
 
 - New message typeahead lists every phone and email for a contact, not only the first.

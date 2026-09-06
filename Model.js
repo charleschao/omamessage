@@ -44,6 +44,55 @@ function capList(out, max) {
   return out
 }
 
+function utf8Len(s) {
+  s = String(s == null ? "" : s)
+  var n = 0
+  var i = 0
+  var c
+  while (i < s.length) {
+    c = s.charCodeAt(i)
+    if (c < 0x80) n += 1
+    else if (c < 0x800) n += 2
+    else if (c >= 0xD800 && c <= 0xDBFF) {
+      n += 4
+      i += 1
+    } else n += 3
+    i += 1
+  }
+  return n
+}
+
+function emptyDict() {
+  return Object.create(null)
+}
+
+function takeSocketLines(buf, chunk, maxBytes) {
+  buf = String(buf == null ? "" : buf)
+  chunk = String(chunk == null ? "" : chunk)
+  var max = parseInt(maxBytes, 10)
+  if (isNaN(max) || max < 1) max = MAX_JSON
+  var lines = []
+  var i = 0
+  var bufBytes = utf8Len(buf)
+  while (i < chunk.length) {
+    var nl = chunk.indexOf("\n", i)
+    var piece = nl < 0 ? chunk.slice(i) : chunk.slice(i, nl)
+    var n = utf8Len(piece)
+    if (bufBytes + n > max) return { buf: "", lines: lines, overflow: true }
+    buf += piece
+    bufBytes += n
+    if (nl >= 0) {
+      lines.push(buf)
+      buf = ""
+      bufBytes = 0
+      i = nl + 1
+    } else {
+      return { buf: buf, lines: lines, overflow: false }
+    }
+  }
+  return { buf: buf, lines: lines, overflow: false }
+}
+
 function isArray(value) {
   return Object.prototype.toString.call(value) === "[object Array]"
 }
@@ -459,6 +508,49 @@ function escapeHtml(s) {
     .replace(/"/g, "&quot;")
 }
 
+function isDnsHostname(host) {
+  host = String(host || "").toLowerCase()
+  if (!host || host.length > 253) return false
+  if (host.charAt(host.length - 1) === ".") host = host.slice(0, -1)
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) return false
+  if (!/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$/.test(host))
+    return false
+  var tld = host.split(".").pop()
+  if (tld === "local" || tld === "localhost" || tld === "internal" || tld === "lan") return false
+  if (tld.length < 2) return false
+  return true
+}
+
+function parseHttpsUrl(url) {
+  var u = String(url == null ? "" : url)
+  if (!u || u.length > MAX_BODY) return ""
+  if (/[\x00-\x1f\x7f\s<>"'\\]/.test(u)) return ""
+  if (u.slice(0, 8).toLowerCase() !== "https://") return ""
+  var rest = u.slice(8)
+  if (!rest) return ""
+  var hostEnd = rest.length
+  var slash = rest.indexOf("/")
+  var q = rest.indexOf("?")
+  var hash = rest.indexOf("#")
+  if (slash >= 0 && slash < hostEnd) hostEnd = slash
+  if (q >= 0 && q < hostEnd) hostEnd = q
+  if (hash >= 0 && hash < hostEnd) hostEnd = hash
+  var hostport = rest.slice(0, hostEnd)
+  if (!hostport || hostport.indexOf("@") >= 0 || hostport.indexOf("%") >= 0) return ""
+  if (hostport.charAt(0) === "[") return ""
+  var host = hostport
+  var port = ""
+  var colon = hostport.lastIndexOf(":")
+  if (colon >= 0) {
+    host = hostport.slice(0, colon)
+    port = hostport.slice(colon + 1)
+    if (!/^[1-9][0-9]{0,4}$/.test(port)) return ""
+    if (parseInt(port, 10) > 65535) return ""
+  }
+  if (!isDnsHostname(host)) return ""
+  return "https://" + host.toLowerCase() + (port ? ":" + port : "") + rest.slice(hostEnd)
+}
+
 function trimUrl(url) {
   while (url.length) {
     var c = url.charAt(url.length - 1)
@@ -485,8 +577,10 @@ function linkify(body) {
     var url = trimUrl(m[0])
     if (!url) continue
     out += escapeHtml(raw.slice(cursor, m.index))
-    var href = url.slice(0, 4).toLowerCase() === "www." ? "http://" + url : url
-    out += "<a href=\"" + escapeHtml(href) + "\">" + escapeHtml(url) + "</a>"
+    var candidate = url.slice(0, 4).toLowerCase() === "www." ? "https://" + url : url
+    var href = parseHttpsUrl(candidate)
+    if (href) out += "<a href=\"" + escapeHtml(href) + "\">" + escapeHtml(url) + "</a>"
+    else out += escapeHtml(url)
     cursor = m.index + url.length
     re.lastIndex = cursor
   }
@@ -585,12 +679,4 @@ function threadByHandle(threads, handle) {
   return null
 }
 
-function fileFromUrl(url) {
-  var u = String(url || "")
-  if (u.indexOf("file://") === 0) {
-    u = decodeURIComponent(u.slice(7))
-    if (u.indexOf("localhost/") === 0) u = u.slice(9)
-    else if (u.indexOf("/localhost/") === 0) u = u.slice(10)
-  }
-  return u
-}
+

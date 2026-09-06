@@ -292,6 +292,7 @@ Panel {
               width: parent.width - newBtn.width - Style.space(8)
               anchors.verticalCenter: parent.verticalCenter
               placeholderText: "Search"
+              maximumLength: Model.MAX_NAME
               font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
               foreground: root.fg
@@ -621,7 +622,10 @@ Panel {
                   linkColor: root.accent
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.body
-                  onLinkActivated: function(link) { Qt.openUrlExternally(link) }
+                  onLinkActivated: function(link) {
+                    var href = Model.parseHttpsUrl(link)
+                    if (href) Qt.openUrlExternally(href)
+                  }
                 }
               }
 
@@ -668,6 +672,7 @@ Panel {
               anchors.topMargin: Style.space(6)
               anchors.bottomMargin: Style.space(6)
               placeholderText: "To"
+              maximumLength: Model.MAX_HANDLE
               font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
               foreground: root.fg
@@ -769,6 +774,7 @@ Panel {
               width: parent.width - sendBtn.width - Style.space(8)
               anchors.verticalCenter: parent.verticalCenter
               placeholderText: root.repliable ? "Message" : "Can't reply here"
+              maximumLength: Model.MAX_BODY
               font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
               foreground: root.fg
@@ -817,6 +823,7 @@ Panel {
               width: parent.width - composeSend.width - Style.space(8)
               anchors.verticalCenter: parent.verticalCenter
               placeholderText: "Message"
+              maximumLength: Model.MAX_BODY
               font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
               foreground: root.fg

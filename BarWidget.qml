@@ -13,15 +13,16 @@ BarWidget {
 
   property bool daemonOk: false
   property int reconnectAttempt: 0
-  property bool spawnAttempted: false
   property var status: ({ present: false, paired: false, map: false, pbap: false, classic: false, le: false, mapError: "", note: "", linkReason: "", profileReason: "" })
   property var devices: []
   property var threads: []
   property var messages: []
   property var contacts: []
   property var calls: []
-  property var drafts: ({})
-  property var markedRead: ({})
+  property var drafts: Model.emptyDict()
+  property var markedRead: Model.emptyDict()
+  property string sockBuf: ""
+  property string pendingCopy: ""
   property string contactQuery: ""
   property string page: "inbox"
   property var selectedThread: null
@@ -33,7 +34,8 @@ BarWidget {
 
   readonly property string socketPath: {
     var runtime = Quickshell.env("XDG_RUNTIME_DIR")
-    return String(runtime || "/tmp") + "/tether/tetherd.sock"
+    if (!runtime) return ""
+    return String(runtime) + "/tether/tetherd.sock"
   }
   readonly property bool socketUp: !!(socketLoader.item && socketLoader.item.connected)
   readonly property bool mapUp: status && status.map === true
@@ -50,9 +52,26 @@ BarWidget {
   function sendCmd(obj) {
     var sock = socketLoader.item
     if (!sock || !sock.connected) return false
-    sock.write(JSON.stringify(obj) + "\n")
+    var line = JSON.stringify(obj)
+    if (Model.utf8Len(line) > Model.MAX_JSON) return false
+    sock.write(line + "\n")
     sock.flush()
     return true
+  }
+
+  function dropSocket() {
+    root.sockBuf = ""
+    var sock = socketLoader.item
+    if (sock) sock.connected = false
+  }
+
+  function handleChunk(chunk) {
+    var r = Model.takeSocketLines(root.sockBuf, chunk, Model.MAX_JSON)
+    root.sockBuf = r.buf
+    var lines = r.lines || []
+    var i
+    for (i = 0; i < lines.length; i++) root.handleLine(lines[i])
+    if (r.overflow) root.dropSocket()
   }
 
   function pullState() {
@@ -72,6 +91,7 @@ BarWidget {
   function onSocketDown() {
     root.daemonOk = false
     root.sending = false
+    root.sockBuf = ""
     sendWatchdog.stop()
   }
 
@@ -174,7 +194,7 @@ BarWidget {
   }
 
   function openApp() {
-    Quickshell.execDetached(["uwsm-app", "--", "tether-gtk"])
+    Quickshell.execDetached(["/usr/bin/uwsm-app", "--", "tether-gtk"])
   }
 
   function showInbox() {
@@ -205,8 +225,8 @@ BarWidget {
 
   function stashDraft(handle, text) {
     if (!handle) return
-    var next = {}
-    var old = root.drafts || {}
+    var next = Model.emptyDict()
+    var old = root.drafts || Model.emptyDict()
     for (var k in old) next[k] = old[k]
     var t = String(text || "")
     if (t) next[handle] = t
@@ -238,8 +258,8 @@ BarWidget {
   function markRead(msgs) {
     var handles = Model.unreadHandles(msgs)
     var pending = []
-    var seen = {}
-    var old = root.markedRead || {}
+    var seen = Model.emptyDict()
+    var old = root.markedRead || Model.emptyDict()
     for (var k in old) seen[k] = old[k]
     for (var i = 0; i < handles.length; i++) {
       if (seen[handles[i]]) continue
@@ -255,6 +275,10 @@ BarWidget {
     var h = Model.normalizeHandle(handle)
     var t = String(text || "").replace(/^\s+|\s+$/g, "")
     if (!h || !t) return false
+    if (t.length > Model.MAX_BODY) {
+      root.setNote("Message is too long.")
+      return false
+    }
     if (root.sending) {
       root.setNote("Still sending the previous message.")
       return false
@@ -297,7 +321,9 @@ BarWidget {
   }
 
   function searchContacts(q) {
-    root.contactQuery = String(q || "")
+    var s = String(q || "")
+    if (s.length > Model.MAX_NAME) s = s.slice(0, Model.MAX_NAME)
+    root.contactQuery = s
     contactTimer.restart()
   }
 
@@ -354,8 +380,13 @@ BarWidget {
 
   function copyText(text) {
     var t = String(text || "")
-    if (!t) return
-    Quickshell.execDetached(["bash", "-c", "printf %s " + Util.shellQuote(t) + " | wl-copy"])
+    if (!t || t.length > Model.MAX_BODY) return
+    root.pendingCopy = t
+    clipWatchdog.stop()
+    clipKill.stop()
+    clipProc.running = false
+    clipProc.stdinEnabled = true
+    clipProc.running = true
     root.setNote("Copied.")
   }
 
@@ -365,7 +396,7 @@ BarWidget {
   onBarChanged: injectPanel()
   onSettingsChanged: injectPanel()
   Component.onCompleted: {
-    socketLoader.active = true
+    if (root.socketPath) socketLoader.active = true
     injectPanel()
   }
 
@@ -392,8 +423,8 @@ BarWidget {
       path: root.socketPath
       connected: true
       parser: SplitParser {
-        splitMarker: "\n"
-        onRead: function(line) { root.handleLine(line) }
+        splitMarker: ""
+        onRead: function(chunk) { root.handleChunk(chunk) }
       }
       onConnectionStateChanged: {
         if (connected) root.onSocketUp()
@@ -412,16 +443,47 @@ BarWidget {
     id: reconnectTimer
     interval: 1500
     repeat: true
-    running: !root.socketUp
+    running: !!root.socketPath && !root.socketUp
     onTriggered: {
-      if (!root.spawnAttempted) {
-        root.spawnAttempted = true
-        Quickshell.execDetached(["tether", "--bt-connection"])
-      }
+      if (!root.socketPath) return
       root.reconnectAttempt = Math.min(12, root.reconnectAttempt + 1)
       socketLoader.active = false
       socketLoader.active = true
     }
+  }
+
+  Process {
+    id: clipProc
+    command: ["/usr/bin/wl-copy"]
+    stdinEnabled: true
+    onStarted: {
+      write(root.pendingCopy)
+      root.pendingCopy = ""
+      stdinEnabled = false
+      clipWatchdog.restart()
+    }
+    onExited: {
+      clipWatchdog.stop()
+      clipKill.stop()
+      stdinEnabled = true
+    }
+  }
+
+  Timer {
+    id: clipWatchdog
+    interval: 3000
+    repeat: false
+    onTriggered: {
+      clipProc.signal(15)
+      clipKill.restart()
+    }
+  }
+
+  Timer {
+    id: clipKill
+    interval: 1000
+    repeat: false
+    onTriggered: clipProc.signal(9)
   }
 
   Loader {
@@ -443,11 +505,8 @@ BarWidget {
     function show(): void { root.open() }
     function hide(): void { root.close() }
     function toggle(): void { root.togglePanel() }
-    function app(): void { root.openApp() }
     function inbox(): void { root.showInbox() }
-    function settings(): void { root.openApp() }
     function contacts(): void { root.showCompose() }
-    function calls(): void { root.open() }
   }
 
   WidgetButton {
