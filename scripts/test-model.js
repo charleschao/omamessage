@@ -53,6 +53,9 @@ eq("bar icon", M.BAR_ICON, "󰍡")
 eq("bar with unread", M.barLabel(3, true, true), "󰍡 3")
 eq("bar idle", M.barLabel(0, true, true), "󰍡")
 eq("bar down", M.barLabel(9, false, true), "󰍡")
+eq("bar notices", M.barLabel(0, true, true, 4, true), "󰍡 4")
+eq("bar unread beats notices", M.barLabel(2, true, true, 9, true), "󰍡 2")
+eq("bar call", M.barLabel(0, true, true, 0, false, true), "󰍡 call")
 eq("filter", M.filterThreads(threads, "ada")[0].name, "Ada")
 eq("zero unread", M.zeroUnread(threads, "tel:+15551212")[0].unread, 0)
 
@@ -191,6 +194,65 @@ eq("notice filter", M.filterNotifications(notices, "proton")[0].uid, 134)
 eq("notice total", M.noticeCount(notices), 2)
 eq("sms thread", M.threadForNotice(threads, notices[1]).handle, "tel:+15551212")
 eq("mail no thread", M.threadForNotice(threads, notices[0]), null)
+
+eq("bucket short stays distinct", M.threadBucket("tel:+15551212"), "tel:15551212")
+eq("bucket us number", M.threadBucket("tel:+15555550123"), "tel:5555550123")
+eq("bucket national", M.threadBucket("tel:5555550123"), "tel:5555550123")
+eq("same thread us spellings", M.sameThread("tel:+15555550123", "tel:5555550123"), true)
+eq("same thread email", M.sameThread("email:Ada@X.test", "email:Ada@X.test"), true)
+eq("different people", M.sameThread("tel:+15555550123", "tel:+15555550999"), false)
+eq("thread by alias", M.threadByHandle([{ handle: "tel:+15555550123", name: "Ada" }], "5555550123").name, "Ada")
+
+const local = M.appendOutgoing(
+  [{ handle: "a", body: "hi", mine: false, timestamp: 1, read: true }],
+  "tel:+15555550123",
+  "on my way",
+  1700000000
+)
+eq("append keeps history", local.length, 2)
+eq("append mine", local[1].mine, true)
+eq("append body", local[1].body, "on my way")
+ok("append local handle", String(local[1].handle).indexOf("local-") === 0)
+
+const server = [
+  { handle: "a", body: "hi", mine: false, timestamp: 1, read: true },
+  { handle: "map-9", body: "on my way", mine: true, timestamp: 2, read: true }
+]
+eq("merge drops echo", M.mergeMessages(server, local, "tel:+15555550123").length, 2)
+eq("merge keeps pending", M.mergeMessages(server.slice(0, 1), local, "tel:+15555550123").length, 2)
+eq("drop local", M.dropLocalOutgoing(local, "on my way").length, 1)
+eq("append pending", local[1].pending, true)
+eq("flags sent", M.setOutgoingFlags(local, "on my way", false, false)[1].pending, false)
+eq("flags failed", M.setOutgoingFlags(local, "on my way", false, true)[1].failed, true)
+
+const patched = M.patchThread(threads, "tel:+15551212", "on my way", 1700000999)
+eq("patch preview", patched[0].preview, "on my way")
+eq("patch front", patched[0].handle, "tel:+15551212")
+eq("patch unread", patched[0].unread, 0)
+
+const drafts = M.putDraft({}, "tel:+15555550123", "hello")
+eq("draft by alias", M.getDraft(drafts, "tel:5555550123"), "hello")
+eq("draft overwrite", M.getDraft(M.putDraft(drafts, "5555550123", "later"), "tel:+15555550123"), "later")
+
+const marked = M.markReadAt({}, "tel:+15551212", 1700000000)
+eq("watermark zeros stale unread", M.applyReadWatermarks(threads, marked)[0].unread, 0)
+const newer = [{ handle: "tel:+15551212", unread: 2, timestamp: 1700000999 }]
+eq("watermark keeps new unread", M.applyReadWatermarks(newer, marked)[0].unread, 2)
+eq("first unread", M.firstUnreadThread(threads).handle, "tel:+15551212")
+
+const grouped = M.decorateTranscript([
+  { handle: "a", name: "Ada", body: "one", mine: false, timestamp: localNoon - 10 },
+  { handle: "b", name: "Bea", body: "two", mine: false, timestamp: localNoon }
+], localNoon, true)
+ok("group name", grouped[1].showName === true && grouped[1].name === "Ada")
+eq("pending stamp", M.decorateTranscript([{ handle: "local-1", body: "x", mine: true, pending: true, timestamp: localNoon }], localNoon)[1].stamp, "Sending…")
+
+const mergedName = M.mergeSelectedThread(
+  { handle: "tel:5555550123", name: "tel:5555550123", address: "5555550123" },
+  { handle: "tel:+15555550123", name: "Ada", address: "+15555550123", repliable: true }
+)
+eq("adopt contact name", mergedName.name, "Ada")
+eq("adopt canonical handle", mergedName.handle, "tel:+15555550123")
 
 if (failed) {
   console.error(failed + " failed")

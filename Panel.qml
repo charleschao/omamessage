@@ -28,6 +28,8 @@ Panel {
   readonly property bool mapUp: hw ? hw.mapUp : false
   readonly property bool ancsUp: hw ? hw.ancsUp : false
   readonly property bool sending: hw ? hw.sending : false
+  readonly property bool sendFailed: hw ? hw.sendFailed : false
+  readonly property bool messagesLoading: hw ? hw.messagesLoading : false
   readonly property string actionNote: hw ? hw.actionNote : ""
   readonly property bool repliable: !!(root.selectedThread && root.selectedThread.repliable)
   readonly property bool inboxMode: root.page === "inbox"
@@ -41,7 +43,7 @@ Panel {
   readonly property var visibleThreads: Model.filterThreads(root.threads, root.searchQuery)
   readonly property var visibleNotices: Model.filterNotifications(root.notifications, root.searchQuery)
   readonly property var contactSuggestions: Model.flattenContactSuggestions(root.contacts)
-  readonly property var transcript: Model.decorateTranscript(root.messages, Date.now() / 1000)
+  readonly property var transcript: Model.decorateTranscript(root.messages, Date.now() / 1000, !!(root.selectedThread && root.selectedThread.group))
   readonly property bool showSetup: root.messagesTab && !root.mapUp && root.threads.length === 0
   readonly property var phone: Model.firstPhone(root.devices)
   readonly property var tabOptions: [
@@ -92,9 +94,16 @@ Panel {
     return 0
   }
   readonly property int headerH: root.tabRowH + root.searchRowH
+  readonly property int noteH: {
+    if (root.actionNote === "") return 0
+    if (root.page !== "thread" && root.page !== "compose" && !root.noticesTab) return 0
+    if (root.sendFailed && (root.page === "thread" || root.page === "compose")) return Style.space(36)
+    return Style.space(28)
+  }
   readonly property int bodyListHeight: {
     var h = root.panelBodyHeight - root.headerH - root.bannerH - Style.space(2)
     h -= root.composeH
+    h -= root.noteH
     if (h < Style.space(200)) h = Style.space(200)
     return h
   }
@@ -133,7 +142,6 @@ Panel {
     root.cursorIndex = 0
     root.cursorActive = false
     root.searchQuery = ""
-    if (searchField.text) searchField.text = ""
   }
 
   function focusComposer() {
@@ -153,7 +161,11 @@ Panel {
     // Keep the binding. Assigning replyField.text breaks it and the field
     // stops taking clicks after the send-disable cycle.
     hw.replyDraft = ""
-    Qt.callLater(root.focusComposer)
+    msgList.pinToEnd = true
+    Qt.callLater(function() {
+      root.focusComposer()
+      if (msgList.count > 0) msgList.positionViewAtEnd()
+    })
   }
 
   function sendComposeNow() {
@@ -200,9 +212,6 @@ Panel {
         Qt.callLater(root.focusComposer)
       else
         Qt.callLater(function() { keyCatcher.forceActiveFocus() })
-    }
-    function onSendingChanged() {
-      if (!root.sending) Qt.callLater(root.focusComposer)
     }
   }
 
@@ -384,7 +393,6 @@ Panel {
                 if (!hw || v === root.tab) return
                 hw.setTab(v)
                 root.searchQuery = ""
-                if (searchField.text) searchField.text = ""
               }
             }
           }
@@ -415,11 +423,11 @@ Panel {
                 text: root.searchQuery
                 onTextChanged: if (text !== root.searchQuery) root.searchQuery = text
                 Keys.onEscapePressed: function(event) {
-                  if (searchField.text) {
-                    searchField.text = ""
+                  if (root.searchQuery) {
+                    root.searchQuery = ""
                     event.accepted = true
                   } else {
-                    root.close()
+                    keyCatcher.forceActiveFocus()
                     event.accepted = true
                   }
                 }
@@ -703,7 +711,7 @@ Panel {
 
             HoverHandler {
               id: nHover
-              cursorShape: modelData.messages ? Qt.PointingHandCursor : Qt.ArrowCursor
+              cursorShape: Qt.PointingHandCursor
             }
 
             MouseArea {
@@ -881,6 +889,16 @@ Panel {
           onMovementEnded: pinToEnd = atYEnd
           onCountChanged: if (pinToEnd && count > 0) positionViewAtEnd()
 
+          Text {
+            visible: root.messagesLoading && root.messages.length === 0
+            anchors.centerIn: parent
+            textFormat: Text.PlainText
+            text: "Loading…"
+            color: root.muted
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+          }
+
           delegate: Item {
             required property var modelData
             width: msgList.width
@@ -906,13 +924,26 @@ Panel {
               anchors.leftMargin: Style.space(14)
               anchors.rightMargin: Style.space(14)
               spacing: Style.space(4)
+              opacity: modelData.pending ? 0.65 : 1
+
+              Text {
+                visible: !!modelData.showName
+                anchors.left: parent.left
+                textFormat: Text.PlainText
+                text: modelData.name || ""
+                color: root.muted
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
 
               Rectangle {
                 id: bubble
                 width: msgBody.width + Style.space(24)
                 implicitHeight: msgBody.implicitHeight + Style.space(16)
                 radius: 14
-                color: modelData.mine ? root.outFill : root.inFill
+                color: modelData.failed
+                  ? Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.08)
+                  : (modelData.mine ? root.outFill : root.inFill)
 
                 Text {
                   id: msgBody
@@ -931,6 +962,21 @@ Panel {
                     var href = Model.parseHttpsUrl(link)
                     if (href) Qt.openUrlExternally(href)
                   }
+                }
+
+                MouseArea {
+                  anchors.fill: parent
+                  acceptedButtons: Qt.LeftButton | Qt.RightButton
+                  propagateComposedEvents: true
+                  onClicked: function(mouse) {
+                    if (mouse.button === Qt.RightButton) {
+                      if (hw && modelData.body) hw.copyText(modelData.body)
+                      mouse.accepted = true
+                    } else {
+                      mouse.accepted = false
+                    }
+                  }
+                  onPressAndHold: if (hw && modelData.body) hw.copyText(modelData.body)
                 }
               }
 
@@ -987,6 +1033,7 @@ Panel {
                 if (hw && text !== hw.composeTo) hw.composeTo = text
                 if (hw) hw.searchContacts(text)
               }
+              onAccepted: composeField.forceActiveFocus()
               Keys.onEscapePressed: function(event) {
                 if (hw) hw.backToList()
                 event.accepted = true
@@ -1052,7 +1099,11 @@ Panel {
               visible: root.contactSuggestions.length === 0
               anchors.centerIn: parent
               textFormat: Text.PlainText
-              text: root.status && root.status.pbap ? "Type a name or number" : "Contacts not connected"
+              text: {
+                if (!(root.status && root.status.pbap)) return "Contacts not connected"
+                if (toField.text.replace(/^\s+|\s+$/g, "")) return "No matches. Send will message this address."
+                return "Type a name or number"
+              }
               color: root.muted
               font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
@@ -1100,7 +1151,7 @@ Panel {
 
             Button {
               id: sendBtn
-              text: "Send"
+              text: root.sending ? "Sending…" : "Send"
               bordered: true
               foreground: root.fg
               accent: root.accent
@@ -1150,7 +1201,7 @@ Panel {
 
             Button {
               id: composeSend
-              text: "Send"
+              text: root.sending ? "Sending…" : "Send"
               bordered: true
               foreground: root.fg
               accent: root.accent
@@ -1163,16 +1214,40 @@ Panel {
           }
         }
 
-        Text {
+        Item {
           visible: root.actionNote !== "" && (root.page === "thread" || root.page === "compose" || root.noticesTab)
-          width: parent.width - Style.space(32)
-          leftPadding: Style.space(16)
-          wrapMode: Text.WordWrap
-          textFormat: Text.PlainText
-          text: root.actionNote
-          color: root.muted
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.caption
+          width: parent.width
+          height: visible ? root.noteH : 0
+
+          Text {
+            anchors.left: parent.left
+            anchors.right: retryBtn.visible ? retryBtn.left : parent.right
+            anchors.leftMargin: Style.space(16)
+            anchors.rightMargin: Style.space(8)
+            anchors.verticalCenter: parent.verticalCenter
+            wrapMode: Text.WordWrap
+            elide: Text.ElideRight
+            textFormat: Text.PlainText
+            text: root.actionNote
+            color: root.muted
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+          }
+
+          Button {
+            id: retryBtn
+            visible: root.sendFailed && (root.page === "thread" || root.page === "compose")
+            anchors.right: parent.right
+            anchors.rightMargin: Style.space(12)
+            anchors.verticalCenter: parent.verticalCenter
+            text: "Retry"
+            bordered: true
+            foreground: root.fg
+            accent: root.accent
+            fontFamily: root.fontFamily
+            fontSize: Style.font.caption
+            onClicked: if (hw) hw.retrySend()
+          }
         }
       }
     }

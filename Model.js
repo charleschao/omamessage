@@ -20,6 +20,7 @@ var MAX_ADDR = 64
 var MAX_STATUS = 64
 var GROUP_WINDOW_SECONDS = 300
 var APP_ID_MESSAGES = "com.apple.MobileSMS"
+var LOCAL_HANDLE_PREFIX = "local-"
 
 var OTP_CUES = [
   "code", "otp", "one-time", "one time", "verification", "verify",
@@ -470,10 +471,14 @@ function unreadTotal(threads) {
 // nf-md-message — the SMS / iMessage speech bubble in Nerd Fonts.
 var BAR_ICON = "󰍡"
 
-function barLabel(unread, mapUp, daemonOk) {
+function barLabel(unread, mapUp, daemonOk, notices, ancsUp, ringing) {
+  if (ringing) return BAR_ICON + " call"
   var n = parseInt(unread, 10)
   if (isNaN(n) || n < 0) n = 0
   if (daemonOk && mapUp && n > 0) return BAR_ICON + " " + String(n)
+  var n2 = parseInt(notices, 10)
+  if (isNaN(n2) || n2 < 0) n2 = 0
+  if (daemonOk && ancsUp && n2 > 0) return BAR_ICON + " " + String(n2)
   return BAR_ICON
 }
 
@@ -535,7 +540,7 @@ function zeroUnread(threads, handle) {
   for (var i = 0; i < n; i++) {
     var t = list[i]
     if (!t) continue
-    if (t.handle === handle) {
+    if (sameThread(t.handle, handle)) {
       out.push({
         handle: t.handle,
         name: t.name,
@@ -735,12 +740,13 @@ function extractOtp(text) {
   return best
 }
 
-function decorateTranscript(messages, nowEpoch) {
+function decorateTranscript(messages, nowEpoch, isGroup) {
   var list = messages || []
   var out = []
   var lastStamp = 0
   var lastMine = false
   var lastDay = ""
+  var lastName = ""
   var n = Math.min(list.length, MAX_MESSAGES)
   var now = nowEpoch || Date.now() / 1000
   for (var i = 0; i < n; i++) {
@@ -752,24 +758,35 @@ function decorateTranscript(messages, nowEpoch) {
       out.push({ kind: "day", label: day })
       lastDay = day
       lastStamp = 0
+      lastName = ""
     }
     var grouped = lastStamp > 0 && m.mine === lastMine && stamp - lastStamp < GROUP_WINDOW_SECONDS && sameLocalDay(lastStamp, stamp)
+    var name = field(m.name, MAX_NAME)
+    var showName = !m.mine && !!isGroup && !!name && (!grouped || name !== lastName)
+    var stampText = ""
+    if (m.pending) stampText = "Sending…"
+    else if (m.failed) stampText = "Not sent"
+    else if (!grouped) stampText = formatStamp(stamp)
     out.push({
       kind: "msg",
       handle: m.handle,
       thread: m.thread,
-      name: m.name,
+      name: name,
+      showName: showName,
       body: m.body,
       html: linkify(m.body),
       timestamp: stamp,
       mine: !!m.mine,
       read: m.read !== false,
+      pending: m.pending === true,
+      failed: m.failed === true,
       otp: m.otp || extractOtp(m.body),
-      showStamp: !grouped,
-      stamp: grouped ? "" : formatStamp(stamp)
+      showStamp: !!stampText,
+      stamp: stampText
     })
     lastStamp = stamp
     lastMine = !!m.mine
+    lastName = name
   }
   return out
 }
@@ -786,13 +803,287 @@ function normalizeHandle(value) {
   return field("tel:" + digits, MAX_HANDLE)
 }
 
+function telSuffix(raw) {
+  var digits = String(raw || "").replace(/\D/g, "")
+  if (digits.length < 10) return ""
+  return digits.slice(-10)
+}
+
+function threadBucket(key) {
+  var h = String(key || "")
+  if (h.indexOf("tel:") !== 0) return h
+  var suffix = telSuffix(h.slice(4))
+  if (!suffix) suffix = h.slice(4).replace(/\D/g, "")
+  return suffix ? "tel:" + suffix : h
+}
+
+function sameThread(a, b) {
+  a = String(a || "")
+  b = String(b || "")
+  if (!a || !b) return false
+  if (a === b) return true
+  return threadBucket(a) === threadBucket(b)
+}
+
+function collapseWs(s) {
+  return String(s || "").replace(/\s+/g, " ").replace(/^\s+|\s+$/g, "")
+}
+
+function isLocalHandle(handle) {
+  return String(handle || "").indexOf(LOCAL_HANDLE_PREFIX) === 0
+}
+
+function appendOutgoing(messages, thread, body, nowEpoch) {
+  var list = messages || []
+  var out = []
+  var n = Math.min(list.length, MAX_MESSAGES - 1)
+  var i
+  for (i = 0; i < n; i++) {
+    if (list[i]) out.push(list[i])
+  }
+  var text = field(body, MAX_BODY)
+  var stamp = epochOf(nowEpoch)
+  if (!stamp) stamp = Math.floor(Date.now() / 1000)
+  out.push({
+    handle: LOCAL_HANDLE_PREFIX + String(stamp) + "-" + String(out.length),
+    thread: String(thread || ""),
+    address: "",
+    name: "",
+    body: text,
+    timestamp: stamp,
+    mine: true,
+    read: true,
+    pending: true,
+    failed: false,
+    otp: extractOtp(text)
+  })
+  return out
+}
+
+function mergeMessages(server, local, thread) {
+  var rows = server || []
+  var out = []
+  var seen = emptyDict()
+  var n = Math.min(rows.length, MAX_MESSAGES)
+  var i
+  for (i = 0; i < n; i++) {
+    if (!rows[i]) continue
+    out.push(rows[i])
+    if (rows[i].mine) seen[collapseWs(rows[i].body)] = true
+  }
+  var extras = local || []
+  var k = Math.min(extras.length, MAX_MESSAGES)
+  for (i = 0; i < k && out.length < MAX_MESSAGES; i++) {
+    var m = extras[i]
+    if (!m || !m.mine || !isLocalHandle(m.handle)) continue
+    if (thread && m.thread && !sameThread(m.thread, thread)) continue
+    var body = collapseWs(m.body)
+    if (!body || seen[body]) continue
+    seen[body] = true
+    out.push(m)
+  }
+  return out
+}
+
+function dropLocalOutgoing(messages, body) {
+  var want = collapseWs(body)
+  var list = messages || []
+  var out = []
+  var n = Math.min(list.length, MAX_MESSAGES)
+  var dropped = false
+  var i
+  for (i = 0; i < n; i++) {
+    var m = list[i]
+    if (!dropped && m && m.mine && isLocalHandle(m.handle) && collapseWs(m.body) === want) {
+      dropped = true
+      continue
+    }
+    if (m) out.push(m)
+  }
+  return out
+}
+
 function threadByHandle(threads, handle) {
-  var h = normalizeHandle(handle)
+  var h = normalizeHandle(handle) || String(handle || "")
   if (!h) return null
   var list = threads || []
   var n = Math.min(list.length, MAX_THREADS)
   for (var i = 0; i < n; i++) {
-    if (list[i] && list[i].handle === h) return list[i]
+    if (list[i] && sameThread(list[i].handle, h)) return list[i]
+  }
+  return null
+}
+
+function draftKey(handle) {
+  var h = normalizeHandle(handle) || String(handle || "")
+  return threadBucket(h)
+}
+
+function getDraft(drafts, handle) {
+  var store = drafts || emptyDict()
+  var key = draftKey(handle)
+  if (key && store[key]) return store[key]
+  var raw = String(handle || "")
+  if (raw && store[raw]) return store[raw]
+  var k
+  for (k in store) {
+    if (sameThread(k, handle) || sameThread(k, key)) return store[k]
+  }
+  return ""
+}
+
+function putDraft(drafts, handle, text) {
+  var next = emptyDict()
+  var key = draftKey(handle)
+  var old = drafts || emptyDict()
+  var k
+  for (k in old) {
+    if (key && (k === key || sameThread(k, key) || sameThread(k, handle))) continue
+    next[k] = old[k]
+  }
+  var t = String(text || "")
+  if (t && key) next[key] = t
+  return next
+}
+
+function setOutgoingFlags(messages, body, pending, failed) {
+  var want = collapseWs(body)
+  var list = messages || []
+  var out = []
+  var n = Math.min(list.length, MAX_MESSAGES)
+  var i
+  var hit = -1
+  for (i = 0; i < n; i++) {
+    var m = list[i]
+    if (m && m.mine && isLocalHandle(m.handle) && collapseWs(m.body) === want) hit = i
+  }
+  for (i = 0; i < n; i++) {
+    var row = list[i]
+    if (!row) continue
+    if (i === hit) {
+      out.push({
+        handle: row.handle,
+        thread: row.thread,
+        address: row.address,
+        name: row.name,
+        body: row.body,
+        timestamp: row.timestamp,
+        mine: true,
+        read: true,
+        pending: pending === true,
+        failed: failed === true,
+        otp: row.otp
+      })
+    } else {
+      out.push(row)
+    }
+  }
+  return out
+}
+
+function copyThread(t, extra) {
+  extra = extra || {}
+  return {
+    handle: extra.handle != null ? extra.handle : t.handle,
+    name: extra.name != null ? extra.name : t.name,
+    address: extra.address != null ? extra.address : t.address,
+    preview: extra.preview != null ? extra.preview : t.preview,
+    timestamp: extra.timestamp != null ? extra.timestamp : t.timestamp,
+    unread: extra.unread != null ? extra.unread : t.unread,
+    count: extra.count != null ? extra.count : t.count,
+    group: extra.group != null ? extra.group : t.group,
+    repliable: extra.repliable != null ? extra.repliable : t.repliable,
+    replyReason: extra.replyReason != null ? extra.replyReason : t.replyReason
+  }
+}
+
+function isRawName(t) {
+  if (!t || !t.name) return true
+  return t.name === t.handle || t.name === t.address
+}
+
+function mergeSelectedThread(current, listed) {
+  if (!current) return listed || null
+  if (!listed) return current
+  var name = listed.name
+  if (isRawName(listed) && !isRawName(current)) name = current.name
+  return copyThread(listed, { name: name })
+}
+
+function patchThread(threads, handle, preview, timestamp) {
+  var list = threads || []
+  var out = []
+  var hit = null
+  var n = Math.min(list.length, MAX_THREADS)
+  var i
+  var stamp = epochOf(timestamp)
+  if (!stamp) stamp = Math.floor(Date.now() / 1000)
+  var text = field(preview, MAX_PREVIEW)
+  for (i = 0; i < n; i++) {
+    var t = list[i]
+    if (!t) continue
+    if (sameThread(t.handle, handle)) {
+      hit = copyThread(t, { preview: text, timestamp: stamp, unread: 0 })
+    } else {
+      out.push(t)
+    }
+  }
+  if (!hit) {
+    var h = normalizeHandle(handle) || String(handle || "")
+    hit = {
+      handle: h,
+      name: h,
+      address: h,
+      preview: text,
+      timestamp: stamp,
+      unread: 0,
+      count: 1,
+      group: false,
+      repliable: true,
+      replyReason: ""
+    }
+  }
+  out.unshift(hit)
+  return capList(out, MAX_THREADS)
+}
+
+function markReadAt(watermarks, handle, epoch) {
+  var next = emptyDict()
+  var old = watermarks || emptyDict()
+  var k
+  for (k in old) next[k] = old[k]
+  var key = draftKey(handle)
+  var stamp = epochOf(epoch)
+  if (!stamp) stamp = Math.floor(Date.now() / 1000)
+  if (key) next[key] = stamp
+  return next
+}
+
+function applyReadWatermarks(threads, watermarks) {
+  var marks = watermarks || emptyDict()
+  var list = threads || []
+  var out = []
+  var n = Math.min(list.length, MAX_THREADS)
+  var i
+  for (i = 0; i < n; i++) {
+    var t = list[i]
+    if (!t) continue
+    var w = marks[draftKey(t.handle)]
+    if (w && epochOf(t.timestamp) <= w) {
+      out.push(copyThread(t, { unread: 0 }))
+    } else {
+      out.push(t)
+    }
+  }
+  return out
+}
+
+function firstUnreadThread(threads) {
+  var list = threads || []
+  var n = Math.min(list.length, MAX_THREADS)
+  var i
+  for (i = 0; i < n; i++) {
+    if (list[i] && list[i].unread > 0) return list[i]
   }
   return null
 }

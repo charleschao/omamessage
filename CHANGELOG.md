@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.5.1] — 2026-09-12
+
+- Sent messages show in the open conversation immediately. A send used to wait on a message list that could arrive under a different thread key (`tel:+1…` vs `tel:…`), so the bubble only appeared after leaving and reopening the chat.
+- Send shows **Sending…**, then **Retry** if it fails or times out; the draft comes back. Back after Send already has the new preview on the conversation list.
+- Chat title picks up the contact name from Tether instead of staying a raw number. Drafts follow the person across number spellings. Unread badges stay cleared after you open a chat.
+- Message box stays clickable after Send. Search no longer breaks when switching tabs. Enter in **To** moves to the message. Empty send says why it failed.
+- Opening a chat shows **Loading…** instead of a blank pane. Group bubbles show who spoke. Right-click or hold a bubble to copy it. Right-click the bar icon opens the latest unread chat.
+- Bar shows an incoming call, and the notification count when there is no unread SMS. Failed notification dismissals refresh the list. Clicking a non-Messages notification copies it.
+
 ## [0.5.0] — 2026-09-10
 
 - Messages and Notifications tabs, matching Tether's ANCS inbox (`bt_list_notifications`)

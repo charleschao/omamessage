@@ -74,7 +74,7 @@ It does **not** stop or uninstall Tether. `tetherd`, `tether-gtk`, pairing, and 
 - Follows the Omarchy light or dark theme (`omarchy theme set`)
 - Middle-click the bar label, or first-run **Open Tether**: `tether-gtk`
 
-Keyboard: `j`/`k` move, Enter open, Esc back, `/` search, `n` new message, `h`/`l` switch tabs, `x` dismiss notification.
+Keyboard: `j`/`k` move, Enter open, Esc back (Esc in search unfocuses first), `/` search, `n` new message, `h`/`l` switch tabs, `x` dismiss notification. Right-click the bar icon to open the latest unread chat. Right-click or hold a bubble to copy it.
 
 Clipboard, files, pairing, Bluetooth setup, and desktop notification popups stay in Tether. The bar is the inbox and the notification list.
 

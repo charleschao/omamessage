@@ -32,7 +32,11 @@ BarWidget {
   property string composeTo: ""
   property string composeBody: ""
   property bool sending: false
+  property bool sendFailed: false
+  property bool messagesLoading: false
   property string pendingBody: ""
+  property string pendingThread: ""
+  property var readWatermarks: Model.emptyDict()
   property string actionNote: ""
 
   readonly property string socketPath: {
@@ -46,7 +50,7 @@ BarWidget {
   readonly property int unreadCount: Model.unreadTotal(threads)
   readonly property int noticeCount: Model.noticeCount(notifications)
   readonly property var ringingCall: Model.liveCall(calls)
-  readonly property string displayText: Model.barLabel(root.unreadCount, root.mapUp, root.daemonOk)
+  readonly property string displayText: Model.barLabel(root.unreadCount, root.mapUp, root.daemonOk, root.noticeCount, root.ancsUp, !!root.ringingCall)
   readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
   readonly property bool popoutSwitchClosing: panelLoader.item ? panelLoader.item.popoutSwitchClosing === true : false
 
@@ -96,10 +100,29 @@ BarWidget {
 
   function onSocketDown() {
     root.daemonOk = false
-    root.sending = false
-    root.pendingBody = ""
     root.sockBuf = ""
     sendWatchdog.stop()
+    if (root.sending) root.failSend("Tether is not running.")
+    else {
+      root.sending = false
+      root.pendingBody = ""
+      root.pendingThread = ""
+    }
+  }
+
+  function failSend(reason) {
+    root.sending = false
+    sendWatchdog.stop()
+    if (root.pendingBody)
+      root.messages = Model.dropLocalOutgoing(root.messages, root.pendingBody)
+    if (root.pendingBody && !String(root.replyDraft || "") && !String(root.composeBody || "")) {
+      if (root.page === "compose") root.composeBody = root.pendingBody
+      else root.replyDraft = root.pendingBody
+    }
+    root.sendFailed = true
+    root.pendingBody = ""
+    root.pendingThread = ""
+    root.setNote(reason || "The message was not sent.")
   }
 
   function handleLine(line) {
@@ -112,14 +135,20 @@ BarWidget {
       return
     }
     if (cmd === "bt_threads") {
-      root.threads = Model.parseThreads(ev)
+      root.threads = Model.applyReadWatermarks(Model.parseThreads(ev), root.readWatermarks)
+      if (root.selectedThread) {
+        var listed = Model.threadByHandle(root.threads, root.selectedThread.handle)
+        if (listed) root.selectedThread = Model.mergeSelectedThread(root.selectedThread, listed)
+      }
       return
     }
     if (cmd === "bt_messages") {
       var key = String(ev.thread || "")
-      if (!root.selectedThread || root.selectedThread.handle !== key) return
-      var msgs = Model.parseMessages(ev)
+      if (!root.selectedThread || !Model.sameThread(root.selectedThread.handle, key)) return
+      var msgs = Model.mergeMessages(Model.parseMessages(ev), root.messages, key)
+      root.adoptThreadKey(key)
       root.messages = msgs
+      root.messagesLoading = false
       root.markRead(msgs)
       return
     }
@@ -146,33 +175,31 @@ BarWidget {
     if (cmd === "bt_notification_action_result") {
       if (ev.success !== true)
         root.setNote(ev.message || "The iPhone would not take the dismissal.")
-      else
-        root.sendCmd({ command: "bt_list_notifications" })
+      root.sendCmd({ command: "bt_list_notifications" })
       return
     }
     if (cmd === "bt_message") {
       root.sendCmd({ command: "bt_list_threads" })
-      if (root.selectedThread && ev.thread === root.selectedThread.handle)
+      if (root.selectedThread && Model.sameThread(ev.thread, root.selectedThread.handle)) {
+        root.adoptThreadKey(ev.thread)
         root.loadMessages(root.selectedThread.handle)
+      }
       return
     }
     if (cmd === "bt_send_result") {
-      root.sending = false
-      sendWatchdog.stop()
       if (ev.success === true) {
-        // Only clear if the box still holds the sent text. A follow-up typed
-        // while the first send was in flight must stay.
+        root.sending = false
+        sendWatchdog.stop()
+        root.sendFailed = false
         if (root.replyDraft === root.pendingBody) root.replyDraft = ""
         if (root.composeBody === root.pendingBody) root.composeBody = ""
+        if (root.pendingBody)
+          root.messages = Model.setOutgoingFlags(root.messages, root.pendingBody, false, false)
         root.pendingBody = ""
-        if (root.selectedThread) root.loadMessages(root.selectedThread.handle)
+        root.pendingThread = ""
         root.sendCmd({ command: "bt_list_threads" })
       } else {
-        if (!String(root.replyDraft || "") && !String(root.composeBody || "") && root.pendingBody) {
-          if (root.page === "compose") root.composeBody = root.pendingBody
-          else root.replyDraft = root.pendingBody
-        }
-        root.setNote(ev.message || "The message was not sent.")
+        root.failSend(ev.message || "The message was not sent.")
       }
       return
     }
@@ -232,6 +259,8 @@ BarWidget {
     root.page = "inbox"
     root.selectedThread = null
     root.messages = []
+    root.messagesLoading = false
+    root.sendFailed = false
     root.replyDraft = ""
     root.composeTo = ""
     root.composeBody = ""
@@ -267,6 +296,8 @@ BarWidget {
     root.page = "compose"
     root.selectedThread = null
     root.messages = []
+    root.messagesLoading = false
+    root.sendFailed = false
     root.replyDraft = ""
     root.composeTo = ""
     root.composeBody = ""
@@ -277,24 +308,33 @@ BarWidget {
 
   function stashDraft(handle, text) {
     if (!handle) return
-    var next = Model.emptyDict()
-    var old = root.drafts || Model.emptyDict()
-    for (var k in old) next[k] = old[k]
-    var t = String(text || "")
-    if (t) next[handle] = t
-    else delete next[handle]
-    root.drafts = next
+    root.drafts = Model.putDraft(root.drafts, handle, text)
+  }
+
+  function adoptThreadKey(key) {
+    var k = String(key || "")
+    if (!k || !root.selectedThread) return
+    if (root.selectedThread.handle === k) return
+    if (!Model.sameThread(root.selectedThread.handle, k)) return
+    root.selectedThread = Model.mergeSelectedThread(root.selectedThread, Model.copyThread(root.selectedThread, { handle: k }))
   }
 
   function openThread(thread) {
     if (!thread || !thread.handle) return
     if (root.page === "thread" && root.selectedThread)
       root.stashDraft(root.selectedThread.handle, root.replyDraft)
+    var same = root.selectedThread && Model.sameThread(root.selectedThread.handle, thread.handle)
     root.selectedThread = thread
     root.page = "thread"
-    root.replyDraft = (root.drafts && root.drafts[thread.handle]) || ""
+    root.replyDraft = Model.getDraft(root.drafts, thread.handle)
     root.actionNote = ""
-    root.threads = Model.zeroUnread(root.threads, thread.handle)
+    root.sendFailed = false
+    root.readWatermarks = Model.markReadAt(root.readWatermarks, thread.handle, thread.timestamp)
+    root.threads = Model.applyReadWatermarks(Model.zeroUnread(root.threads, thread.handle), root.readWatermarks)
+    if (!same) {
+      root.messages = []
+      root.messagesLoading = true
+    }
     root.loadMessages(thread.handle)
     if (panelLoader.item && !root.opened) panelLoader.item.open()
   }
@@ -302,6 +342,7 @@ BarWidget {
   function loadMessages(handle) {
     if (!handle) {
       root.messages = []
+      root.messagesLoading = false
       return
     }
     root.sendCmd({ command: "bt_list_messages", thread: handle })
@@ -326,7 +367,14 @@ BarWidget {
   function sendTo(handle, text) {
     var h = Model.normalizeHandle(handle)
     var t = String(text || "").replace(/^\s+|\s+$/g, "")
-    if (!h || !t) return false
+    if (!h) {
+      root.setNote("Need a name or number.")
+      return false
+    }
+    if (!t) {
+      root.setNote("Type a message.")
+      return false
+    }
     if (t.length > Model.MAX_BODY) {
       root.setNote("Message is too long.")
       return false
@@ -339,8 +387,16 @@ BarWidget {
       root.setNote("Tether is not running.")
       return false
     }
+    var now = Date.now() / 1000
     root.pendingBody = t
+    root.pendingThread = h
     root.sending = true
+    root.sendFailed = false
+    root.actionNote = ""
+    if (root.selectedThread && Model.sameThread(root.selectedThread.handle, h))
+      root.messages = Model.appendOutgoing(root.messages, root.selectedThread.handle, t, now)
+    root.threads = Model.patchThread(root.threads, h, t, now)
+    root.readWatermarks = Model.markReadAt(root.readWatermarks, h, now)
     sendWatchdog.restart()
     return true
   }
@@ -352,7 +408,8 @@ BarWidget {
 
   function sendNew() {
     var h = Model.normalizeHandle(root.composeTo)
-    if (!root.sendTo(h, root.composeBody)) return false
+    var body = root.composeBody
+    if (!root.sendTo(h, body)) return false
     var match = Model.threadByHandle(root.threads, h)
     if (match) {
       root.openThread(match)
@@ -370,7 +427,15 @@ BarWidget {
         replyReason: ""
       })
     }
+    root.messages = Model.appendOutgoing(root.messages, h, root.pendingBody, Date.now() / 1000)
+    root.messagesLoading = root.messages.length === 0
+    root.threads = Model.patchThread(root.threads, h, root.pendingBody, Date.now() / 1000)
     return true
+  }
+
+  function retrySend() {
+    if (root.page === "compose") return root.sendNew()
+    return root.sendReply()
   }
 
   function searchContacts(q) {
@@ -439,6 +504,13 @@ BarWidget {
       root.copyText(notice.otp)
       return
     }
+    var blob = String(notice.primary || "")
+    if (notice.secondary && notice.secondary !== blob) {
+      if (blob) blob += "\n"
+      blob += notice.secondary
+    }
+    if (blob) root.copyText(blob)
+    else root.setNote("No conversation for that notification.")
   }
 
   function answerCall() {
@@ -490,11 +562,7 @@ BarWidget {
     id: sendWatchdog
     interval: 60000
     repeat: false
-    onTriggered: {
-      root.sending = false
-      root.pendingBody = ""
-      root.setNote("Send timed out.")
-    }
+    onTriggered: root.failSend("Send timed out.")
   }
 
   Component {
@@ -599,6 +667,8 @@ BarWidget {
     tooltipText: {
       var status = Model.statusTitle(root.status, root.daemonOk)
       var bits = []
+      if (root.ringingCall)
+        bits.push(Model.callTitle(root.ringingCall) + " · " + Model.callParty(root.ringingCall))
       if (root.mapUp && root.unreadCount > 0)
         bits.push(root.unreadCount + " unread")
       if (root.ancsUp && root.noticeCount > 0)
@@ -607,12 +677,15 @@ BarWidget {
         return Model.neutralizeUi(bits.join(" · ") + " · " + status)
       return Model.neutralizeUi(status)
     }
-    active: root.mapUp && root.unreadCount > 0
-    dimmed: !root.mapUp && !root.ancsUp
+    active: !!(root.ringingCall) || (root.mapUp && root.unreadCount > 0)
+    dimmed: !root.mapUp && !root.ancsUp && !root.ringingCall
     onPressed: function(b) {
       if (b === Qt.MiddleButton) root.openApp()
-      else if (b === Qt.RightButton) root.showInbox()
-      else root.togglePanel()
+      else if (b === Qt.RightButton) {
+        var unread = Model.firstUnreadThread(root.threads)
+        if (unread) root.openThread(unread)
+        else root.showInbox()
+      } else root.togglePanel()
     }
   }
 }
