@@ -19,24 +19,50 @@ Panel {
   readonly property var messages: hw && hw.messages ? hw.messages : []
   readonly property var contacts: hw && hw.contacts ? hw.contacts : []
   readonly property var calls: hw && hw.calls ? hw.calls : []
+  readonly property var notifications: hw && hw.notifications ? hw.notifications : []
   readonly property var ringingCall: hw ? hw.ringingCall : null
   readonly property string page: hw ? hw.page : "inbox"
+  readonly property string tab: hw ? hw.tab : "messages"
   readonly property var selectedThread: hw ? hw.selectedThread : null
   readonly property bool daemonOk: hw ? hw.daemonOk : false
   readonly property bool mapUp: hw ? hw.mapUp : false
+  readonly property bool ancsUp: hw ? hw.ancsUp : false
   readonly property bool sending: hw ? hw.sending : false
   readonly property string actionNote: hw ? hw.actionNote : ""
   readonly property bool repliable: !!(root.selectedThread && root.selectedThread.repliable)
+  readonly property bool inboxMode: root.page === "inbox"
+  readonly property bool messagesTab: root.inboxMode && root.tab === "messages"
+  readonly property bool noticesTab: root.inboxMode && root.tab === "notifications"
 
   property string searchQuery: ""
   property int cursorIndex: 0
   property bool cursorActive: false
 
   readonly property var visibleThreads: Model.filterThreads(root.threads, root.searchQuery)
+  readonly property var visibleNotices: Model.filterNotifications(root.notifications, root.searchQuery)
   readonly property var contactSuggestions: Model.flattenContactSuggestions(root.contacts)
   readonly property var transcript: Model.decorateTranscript(root.messages, Date.now() / 1000)
-  readonly property bool showSetup: !root.mapUp && root.threads.length === 0
+  readonly property bool showSetup: root.messagesTab && !root.mapUp && root.threads.length === 0
   readonly property var phone: Model.firstPhone(root.devices)
+  readonly property var tabOptions: [
+    {
+      value: "messages",
+      label: root.unreadCountLabel
+    },
+    {
+      value: "notifications",
+      label: root.noticeCountLabel
+    }
+  ]
+  readonly property string unreadCountLabel: {
+    var n = hw ? hw.unreadCount : 0
+    return n > 0 ? "Messages " + (n > 99 ? "99+" : String(n)) : "Messages"
+  }
+  readonly property string noticeCountLabel: {
+    var n = hw ? hw.noticeCount : 0
+    return n > 0 ? "Notifications " + (n > 99 ? "99+" : String(n)) : "Notifications"
+  }
+  readonly property var inboxList: root.noticesTab ? root.visibleNotices : root.visibleThreads
 
   readonly property color fg: bar ? bar.foreground : Color.popups.text
   readonly property color muted: Color.muted
@@ -56,10 +82,16 @@ Panel {
   readonly property int bannerH: {
     var h = 0
     if (root.ringingCall) h += Style.space(44)
-    else if (!root.mapUp && !root.showSetup) h += Style.space(36)
+    else if (!root.mapUp && !root.showSetup && !root.noticesTab) h += Style.space(36)
     return h
   }
-  readonly property int headerH: Style.space(52)
+  readonly property int tabRowH: root.inboxMode ? Style.space(48) : 0
+  readonly property int searchRowH: {
+    if (root.page === "thread" || root.page === "compose") return Style.space(52)
+    if (root.inboxMode) return Style.space(52)
+    return 0
+  }
+  readonly property int headerH: root.tabRowH + root.searchRowH
   readonly property int bodyListHeight: {
     var h = root.panelBodyHeight - root.headerH - root.bannerH - Style.space(2)
     h -= root.composeH
@@ -68,7 +100,7 @@ Panel {
   }
 
   function clampCursor() {
-    var n = root.visibleThreads.length
+    var n = root.inboxList.length
     if (n <= 0) {
       root.cursorIndex = 0
       return
@@ -79,25 +111,58 @@ Panel {
 
   function openCursor() {
     if (root.page !== "inbox") return
-    var list = root.visibleThreads
+    var list = root.inboxList
     if (!list.length) return
     root.clampCursor()
-    if (hw) hw.openThread(list[root.cursorIndex])
+    if (!hw) return
+    if (root.noticesTab) hw.activateNotice(list[root.cursorIndex])
+    else hw.openThread(list[root.cursorIndex])
+  }
+
+  function dismissCursor() {
+    if (!root.noticesTab || !hw) return
+    var list = root.visibleNotices
+    if (!list.length) return
+    root.clampCursor()
+    hw.dismissNotice(list[root.cursorIndex])
+  }
+
+  function switchTab(delta) {
+    if (!hw || root.page !== "inbox") return
+    hw.setTab(delta > 0 ? "notifications" : "messages")
+    root.cursorIndex = 0
+    root.cursorActive = false
+    root.searchQuery = ""
+    if (searchField.text) searchField.text = ""
+  }
+
+  function focusComposer() {
+    if (root.page === "thread" && replyField.enabled)
+      replyField.forceActiveFocus()
+    else if (root.page === "compose") {
+      if (composeField.enabled && toField.text.replace(/^\s+|\s+$/g, ""))
+        composeField.forceActiveFocus()
+      else
+        toField.forceActiveFocus()
+    }
   }
 
   function sendReplyNow() {
     if (!hw || !replyField.text.replace(/^\s+|\s+$/g, "") || !root.selectedThread) return
-    hw.replyDraft = replyField.text
-    if (hw.sendTo(root.selectedThread.handle, replyField.text))
-      replyField.text = ""
+    if (!hw.sendTo(root.selectedThread.handle, replyField.text)) return
+    // Keep the binding. Assigning replyField.text breaks it and the field
+    // stops taking clicks after the send-disable cycle.
+    hw.replyDraft = ""
+    Qt.callLater(root.focusComposer)
   }
 
   function sendComposeNow() {
     if (!hw) return
     hw.composeTo = toField.text
     hw.composeBody = composeField.text
-    if (hw.sendNew())
-      composeField.text = ""
+    if (!hw.sendNew()) return
+    hw.composeBody = ""
+    Qt.callLater(root.focusComposer)
   }
 
   function open() {
@@ -118,18 +183,26 @@ Panel {
     return false
   }
 
-  onVisibleThreadsChanged: root.clampCursor()
+  onInboxListChanged: root.clampCursor()
   onSearchQueryChanged: root.cursorIndex = 0
+  onTabChanged: {
+    root.cursorIndex = 0
+    root.cursorActive = false
+  }
 
   Connections {
     target: hw
     function onPageChanged() {
-      if (root.page === "thread")
-        Qt.callLater(function() { replyField.forceActiveFocus() })
-      else if (root.page === "compose")
-        Qt.callLater(function() { toField.forceActiveFocus() })
+      if (root.page === "thread") {
+        msgList.pinToEnd = true
+        Qt.callLater(root.focusComposer)
+      } else if (root.page === "compose")
+        Qt.callLater(root.focusComposer)
       else
         Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+    }
+    function onSendingChanged() {
+      if (!root.sending) Qt.callLater(root.focusComposer)
     }
   }
 
@@ -149,23 +222,33 @@ Panel {
       anchors.fill: parent
       blocked: searchField.activeFocus || replyField.activeFocus || toField.activeFocus || composeField.activeFocus
       onCloseRequested: {
-        if (root.page !== "inbox" && hw) hw.showInbox()
+        if (root.page !== "inbox" && hw) hw.backToList()
         else root.close()
       }
       onTabRequested: function(direction) { root.switchPanel(direction) }
       onMoveRequested: function(dx, dy) {
-        if (dx < 0 && root.page !== "inbox" && hw) {
-          hw.showInbox()
+        if (dx !== 0 && root.page !== "inbox" && hw) {
+          if (dx < 0) hw.backToList()
+          return
+        }
+        if (dx !== 0 && root.page === "inbox") {
+          root.switchTab(dx)
           return
         }
         if (root.page !== "inbox") return
         root.cursorActive = true
         root.cursorIndex += dy
         root.clampCursor()
-        threadList.currentIndex = root.cursorIndex
-        threadList.positionViewAtIndex(root.cursorIndex, ListView.Contain)
+        if (root.noticesTab) {
+          noticeList.currentIndex = root.cursorIndex
+          noticeList.positionViewAtIndex(root.cursorIndex, ListView.Contain)
+        } else {
+          threadList.currentIndex = root.cursorIndex
+          threadList.positionViewAtIndex(root.cursorIndex, ListView.Contain)
+        }
       }
       onActivateRequested: root.openCursor()
+      onDeleteRequested: root.dismissCursor()
       onTextKey: function(t) {
         if (t === "/") {
           searchField.forceActiveFocus()
@@ -273,67 +356,100 @@ Panel {
         }
 
         // Header
-        Item {
+        Column {
           width: parent.width
-          height: root.headerH
+          spacing: 0
 
-          // Inbox: search + New
-          Row {
-            visible: root.page === "inbox"
-            anchors.fill: parent
-            anchors.leftMargin: Style.space(12)
-            anchors.rightMargin: Style.space(12)
-            anchors.topMargin: Style.space(8)
-            anchors.bottomMargin: Style.space(8)
-            spacing: Style.space(8)
+          Item {
+            visible: root.inboxMode
+            width: parent.width
+            height: visible ? root.tabRowH : 0
 
-            TextField {
-              id: searchField
-              width: parent.width - newBtn.width - Style.space(8)
+            ButtonGroup {
+              id: tabGroup
+              anchors.left: parent.left
+              anchors.right: parent.right
+              anchors.leftMargin: Style.space(12)
+              anchors.rightMargin: Style.space(12)
               anchors.verticalCenter: parent.verticalCenter
-              placeholderText: "Search"
-              maximumLength: Model.MAX_NAME
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.bodySmall
+              options: root.tabOptions
+              value: root.tab
               foreground: root.fg
-              accent: root.accent
-              text: root.searchQuery
-              onTextChanged: if (text !== root.searchQuery) root.searchQuery = text
-              Keys.onEscapePressed: function(event) {
-                if (searchField.text) {
-                  searchField.text = ""
-                  event.accepted = true
-                } else {
-                  root.close()
-                  event.accepted = true
-                }
-              }
-            }
-
-            Button {
-              id: newBtn
-              text: "New"
-              bordered: true
-              foreground: root.fg
+              background: "transparent"
               accent: root.accent
               fontFamily: root.fontFamily
-              fontSize: Style.font.bodySmall
-              anchors.verticalCenter: parent.verticalCenter
-              enabled: root.mapUp
-              onClicked: if (hw) hw.showCompose()
+              fontSize: Style.font.caption
+              focusable: false
+              onChanged: function(v) {
+                if (!hw || v === root.tab) return
+                hw.setTab(v)
+                root.searchQuery = ""
+                if (searchField.text) searchField.text = ""
+              }
             }
           }
 
-          // Thread / compose title
+          Item {
+            visible: root.inboxMode
+            width: parent.width
+            height: visible ? root.searchRowH : 0
+
+            Row {
+              anchors.fill: parent
+              anchors.leftMargin: Style.space(12)
+              anchors.rightMargin: Style.space(12)
+              anchors.topMargin: Style.space(8)
+              anchors.bottomMargin: Style.space(8)
+              spacing: Style.space(8)
+
+              TextField {
+                id: searchField
+                width: parent.width - (newBtn.visible ? newBtn.width + Style.space(8) : 0)
+                anchors.verticalCenter: parent.verticalCenter
+                placeholderText: root.noticesTab ? "Search notifications" : "Search"
+                maximumLength: Model.MAX_NAME
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.bodySmall
+                foreground: root.fg
+                accent: root.accent
+                text: root.searchQuery
+                onTextChanged: if (text !== root.searchQuery) root.searchQuery = text
+                Keys.onEscapePressed: function(event) {
+                  if (searchField.text) {
+                    searchField.text = ""
+                    event.accepted = true
+                  } else {
+                    root.close()
+                    event.accepted = true
+                  }
+                }
+              }
+
+              Button {
+                id: newBtn
+                visible: root.messagesTab
+                text: "New"
+                bordered: true
+                foreground: root.fg
+                accent: root.accent
+                fontFamily: root.fontFamily
+                fontSize: Style.font.bodySmall
+                anchors.verticalCenter: parent.verticalCenter
+                enabled: root.mapUp
+                onClicked: if (hw) hw.showCompose()
+              }
+            }
+          }
+
           Item {
             visible: root.page !== "inbox"
-            anchors.fill: parent
-            anchors.leftMargin: Style.space(16)
-            anchors.rightMargin: Style.space(16)
+            width: parent.width
+            height: visible ? root.searchRowH : 0
 
             Text {
               id: backLink
               anchors.left: parent.left
+              anchors.leftMargin: Style.space(16)
               anchors.verticalCenter: parent.verticalCenter
               textFormat: Text.PlainText
               text: "←"
@@ -344,7 +460,7 @@ Panel {
                 anchors.fill: parent
                 anchors.margins: -Style.space(6)
                 cursorShape: Qt.PointingHandCursor
-                onClicked: if (hw) hw.showInbox()
+                onClicked: if (hw) hw.backToList()
               }
             }
 
@@ -352,6 +468,7 @@ Panel {
               anchors.left: backLink.right
               anchors.leftMargin: Style.space(8)
               anchors.right: parent.right
+              anchors.rightMargin: Style.space(16)
               anchors.verticalCenter: parent.verticalCenter
               spacing: 0
               Text {
@@ -384,7 +501,7 @@ Panel {
 
         // Setup empty
         Item {
-          visible: root.page === "inbox" && root.showSetup
+          visible: root.showSetup
           width: parent.width
           height: root.bodyListHeight
 
@@ -451,7 +568,7 @@ Panel {
         // Conversation list
         ListView {
           id: threadList
-          visible: root.page === "inbox" && !root.showSetup
+          visible: root.messagesTab && !root.showSetup
           width: parent.width
           height: root.bodyListHeight
           clip: true
@@ -564,6 +681,192 @@ Panel {
           }
         }
 
+        // Notifications
+        ListView {
+          id: noticeList
+          visible: root.noticesTab
+          width: parent.width
+          height: root.bodyListHeight
+          clip: true
+          boundsBehavior: Flickable.StopAtBounds
+          spacing: 0
+          model: root.visibleNotices
+          currentIndex: root.cursorIndex
+
+          delegate: Item {
+            id: noticeRow
+            required property var modelData
+            required property int index
+            width: noticeList.width
+            height: noticeBody.implicitHeight + Style.space(16)
+            readonly property bool current: index === root.cursorIndex
+
+            HoverHandler {
+              id: nHover
+              cursorShape: modelData.messages ? Qt.PointingHandCursor : Qt.ArrowCursor
+            }
+
+            MouseArea {
+              z: -1
+              anchors.fill: parent
+              onClicked: {
+                root.cursorActive = false
+                root.cursorIndex = index
+                if (hw) hw.activateNotice(modelData)
+              }
+            }
+
+            Rectangle {
+              anchors.fill: parent
+              color: nHover.hovered || (noticeRow.current && root.cursorActive) ? root.hoverFill : "transparent"
+            }
+
+            Column {
+              id: noticeBody
+              anchors.left: parent.left
+              anchors.right: parent.right
+              anchors.leftMargin: Style.space(16)
+              anchors.rightMargin: Style.space(16)
+              anchors.verticalCenter: parent.verticalCenter
+              spacing: 2
+
+              Item {
+                width: parent.width
+                height: Math.max(noticeApp.implicitHeight, noticeMeta.height)
+
+                Text {
+                  id: noticeApp
+                  anchors.left: parent.left
+                  anchors.right: noticeMeta.left
+                  anchors.rightMargin: Style.space(8)
+                  anchors.verticalCenter: parent.verticalCenter
+                  textFormat: Text.PlainText
+                  text: modelData.app || "Notification"
+                  elide: Text.ElideRight
+                  color: root.muted
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                }
+
+                Row {
+                  id: noticeMeta
+                  anchors.right: parent.right
+                  anchors.verticalCenter: parent.verticalCenter
+                  spacing: Style.space(2)
+
+                  Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    textFormat: Text.PlainText
+                    text: Model.formatThreadTime(modelData.timestamp)
+                    color: root.muted
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                  }
+
+                  PanelActionButton {
+                    visible: !!modelData.negative
+                    iconText: "󰅖"
+                    tooltipText: "Dismiss"
+                    foreground: root.muted
+                    hoverColor: root.fg
+                    fontFamily: root.fontFamily
+                    fontSize: Style.font.caption
+                    onClicked: if (hw) hw.dismissNotice(modelData)
+                  }
+                }
+              }
+
+              Text {
+                width: parent.width
+                textFormat: Text.PlainText
+                text: modelData.primary || ""
+                wrapMode: Text.NoWrap
+                elide: Text.ElideRight
+                color: root.fg
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.body
+              }
+              Text {
+                visible: !!modelData.secondary
+                width: parent.width
+                textFormat: Text.PlainText
+                text: modelData.secondary || ""
+                wrapMode: Text.NoWrap
+                elide: Text.ElideRight
+                color: root.muted
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.bodySmall
+              }
+              Button {
+                visible: !!modelData.otp
+                text: "Copy " + modelData.otp
+                bordered: true
+                foreground: root.fg
+                accent: root.accent
+                fontFamily: root.fontFamily
+                fontSize: Style.font.caption
+                onClicked: if (hw) hw.copyText(modelData.otp)
+              }
+            }
+          }
+
+          Column {
+            visible: root.visibleNotices.length === 0
+            anchors.centerIn: parent
+            width: parent.width - Style.space(48)
+            spacing: Style.space(12)
+            Text {
+              width: parent.width
+              wrapMode: Text.WordWrap
+              horizontalAlignment: Text.AlignHCenter
+              textFormat: Text.PlainText
+              text: {
+                if (root.searchQuery) return "No matches"
+                if (root.ancsUp) return "No notifications yet"
+                return Model.statusTitle(root.status, root.daemonOk)
+              }
+              color: root.fg
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.body
+            }
+            Text {
+              visible: !root.searchQuery && !root.ancsUp
+              width: parent.width
+              wrapMode: Text.WordWrap
+              horizontalAlignment: Text.AlignHCenter
+              textFormat: Text.PlainText
+              text: Model.ancsHint(root.status, root.daemonOk)
+              color: root.muted
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+            }
+            Row {
+              visible: !root.ancsUp && !root.searchQuery
+              anchors.horizontalCenter: parent.horizontalCenter
+              spacing: Style.space(8)
+              Button {
+                text: "Open Tether"
+                bordered: true
+                foreground: root.fg
+                accent: root.accent
+                fontFamily: root.fontFamily
+                fontSize: Style.font.bodySmall
+                onClicked: if (hw) hw.openApp()
+              }
+              Button {
+                visible: Model.needsSolicit(root.status)
+                text: "Ask iPhone"
+                bordered: true
+                foreground: root.fg
+                accent: root.accent
+                fontFamily: root.fontFamily
+                fontSize: Style.font.bodySmall
+                onClicked: if (hw) hw.solicit()
+              }
+            }
+          }
+        }
+
         // Transcript
         ListView {
           id: msgList
@@ -574,7 +877,9 @@ Panel {
           spacing: Style.space(2)
           boundsBehavior: Flickable.StopAtBounds
           model: root.transcript
-          onCountChanged: if (count > 0) positionViewAtEnd()
+          property bool pinToEnd: true
+          onMovementEnded: pinToEnd = atYEnd
+          onCountChanged: if (pinToEnd && count > 0) positionViewAtEnd()
 
           delegate: Item {
             required property var modelData
@@ -683,7 +988,7 @@ Panel {
                 if (hw) hw.searchContacts(text)
               }
               Keys.onEscapePressed: function(event) {
-                if (hw) hw.showInbox()
+                if (hw) hw.backToList()
                 event.accepted = true
               }
             }
@@ -760,6 +1065,7 @@ Panel {
           visible: root.page === "thread"
           width: parent.width
           height: root.composeHeight
+          z: 1
 
           Row {
             anchors.fill: parent
@@ -779,12 +1085,15 @@ Panel {
               font.pixelSize: Style.font.bodySmall
               foreground: root.fg
               accent: root.accent
-              enabled: root.repliable && root.mapUp && !root.sending
+              // Do not bind enabled to sending. A disabled QQC TextField in this
+              // panel drops mouse hits to the card MouseArea, then never takes
+              // them back after the Bluetooth send finishes.
+              enabled: root.repliable && root.mapUp
               text: hw ? hw.replyDraft : ""
               onTextChanged: if (hw && text !== hw.replyDraft) hw.replyDraft = text
               onAccepted: root.sendReplyNow()
               Keys.onEscapePressed: function(event) {
-                if (hw) hw.showInbox()
+                if (hw) hw.backToList()
                 event.accepted = true
               }
             }
@@ -809,6 +1118,7 @@ Panel {
           visible: root.page === "compose"
           width: parent.width
           height: root.composeHeight
+          z: 1
 
           Row {
             anchors.fill: parent
@@ -828,12 +1138,12 @@ Panel {
               font.pixelSize: Style.font.bodySmall
               foreground: root.fg
               accent: root.accent
-              enabled: root.mapUp && !root.sending
+              enabled: root.mapUp
               text: hw ? hw.composeBody : ""
               onTextChanged: if (hw && text !== hw.composeBody) hw.composeBody = text
               onAccepted: root.sendComposeNow()
               Keys.onEscapePressed: function(event) {
-                if (hw) hw.showInbox()
+                if (hw) hw.backToList()
                 event.accepted = true
               }
             }
@@ -854,7 +1164,7 @@ Panel {
         }
 
         Text {
-          visible: root.actionNote !== "" && (root.page === "thread" || root.page === "compose")
+          visible: root.actionNote !== "" && (root.page === "thread" || root.page === "compose" || root.noticesTab)
           width: parent.width - Style.space(32)
           leftPadding: Style.space(16)
           wrapMode: Text.WordWrap

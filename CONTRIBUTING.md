@@ -15,6 +15,6 @@ This is an Omarchy bar widget. Tether itself lives at https://github.com/zackb/t
 
 - Copy Tether source
 - Add OTP vault / browser / mail extensions
-- Add Settings, Link, Notify, Calls, or Contacts tabs
+- Add Settings, Link, Calls, or Contacts tabs (Messages + Notifications only)
 - Scrape `tether --bt-*` stdout for the inbox (use tetherd.sock JSON)
 - Introduce `omarchy.*` ids or symlinks

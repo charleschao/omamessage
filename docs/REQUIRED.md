@@ -15,6 +15,7 @@ The same socket `tether-gtk` uses. Typical commands:
 - `subscribe`
 - `bt_connection` / `bt_list_devices` / `bt_list_threads` / `bt_list_messages`
 - `bt_list_contacts` / `bt_send_message` / `bt_mark_read`
+- `bt_list_notifications` / `bt_notification_action`
 - `bt_list_calls` / `bt_call_action`
 - `bt_solicit`
 

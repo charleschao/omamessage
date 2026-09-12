@@ -1,6 +1,6 @@
 # Omamessage
 
-Omarchy bar inbox for iPhone SMS and iMessage — driven by [Tether](https://github.com/zackb/tether) by **Zack Bartel**.
+Omarchy bar inbox for iPhone SMS, iMessage, and notifications — driven by [Tether](https://github.com/zackb/tether) by **Zack Bartel**.
 
 Tether’s advantage over [BlueBubbles](https://bluebubbles.app/) is that you do **not** need a Mac or a macOS VM running in the background. Continuity-style features talk to the iPhone from Linux.
 
@@ -63,18 +63,20 @@ It does **not** stop or uninstall Tether. `tetherd`, `tether-gtk`, pairing, and 
 
 ## Features
 
+- Two tabs: **Messages** and **Notifications** (Tether's ANCS mirror)
 - Bar icon: speech bubble, with the unread count beside it when something is unread
 - Conversation list with search (`/`), unread badges, relative times
 - Transcript with day headings, grouped bubbles, clickable links
 - Reply, new message (`n`) with contact typeahead
-- Copy a verification code when an SMS is a one-time code
+- Copy a verification code when an SMS or notification is a one-time code
+- Dismiss a mirrored notification on the iPhone
 - Incoming call banner (audio stays on the iPhone)
 - Follows the Omarchy light or dark theme (`omarchy theme set`)
 - Middle-click the bar label, or first-run **Open Tether**: `tether-gtk`
 
-Keyboard: `j`/`k` move, Enter open, Esc back, `/` search, `n` new message.
+Keyboard: `j`/`k` move, Enter open, Esc back, `/` search, `n` new message, `h`/`l` switch tabs, `x` dismiss notification.
 
-Clipboard, files, pairing, Bluetooth setup, and notification popups stay in Tether. The bar is the inbox.
+Clipboard, files, pairing, Bluetooth setup, and desktop notification popups stay in Tether. The bar is the inbox and the notification list.
 
 Car-kit limits (groups, tapbacks, attachments, no blue/green bubbles) are Tether/iOS MAP, not this UI.
 

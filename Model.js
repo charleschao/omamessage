@@ -10,6 +10,7 @@ var MAX_MESSAGES = 200
 var MAX_CONTACTS = 100
 var MAX_CONTACT_FIELDS = 16
 var MAX_SUGGESTIONS = 80
+var MAX_NOTICES = 80
 var MAX_NAME = 128
 var MAX_PREVIEW = 240
 var MAX_BODY = 2048
@@ -18,6 +19,7 @@ var MAX_HANDLE = 256
 var MAX_ADDR = 64
 var MAX_STATUS = 64
 var GROUP_WINDOW_SECONDS = 300
+var APP_ID_MESSAGES = "com.apple.MobileSMS"
 
 var OTP_CUES = [
   "code", "otp", "one-time", "one time", "verification", "verify",
@@ -133,10 +135,12 @@ function parseConnection(obj) {
     pbap: obj.pbap_open === true,
     classic: obj.classic_connected === true,
     le: obj.le_connected === true || obj.le_available === true,
+    ancs: obj.ancs_ready === true,
     mapError: field(obj.map_error, MAX_STATUS),
     note: field(obj.profile_reason || obj.link_reason, MAX_NOTE),
     linkReason: field(obj.link_reason, MAX_NOTE),
-    profileReason: field(obj.profile_reason, MAX_NOTE)
+    profileReason: field(obj.profile_reason, MAX_NOTE),
+    ancsReason: field(obj.ancs_reason, MAX_NOTE)
   }
 }
 
@@ -312,6 +316,110 @@ function parseCalls(obj) {
   return out
 }
 
+function parseNotification(row) {
+  var n = asObject(row)
+  if (!n) return null
+  var uid = parseInt(n.uid, 10)
+  if (isNaN(uid) || uid < 0) return null
+  var title = field(n.title, MAX_NAME)
+  var subtitle = field(n.subtitle, MAX_PREVIEW)
+  var body = field(n.body, MAX_BODY)
+  var appId = field(n.app_id, MAX_HANDLE)
+  var appName = field(n.app_name, MAX_NAME) || appId
+  var primary = title || body || "New notification"
+  var secondary = ""
+  if (subtitle) secondary = subtitle
+  if (body && body !== primary) {
+    if (secondary) secondary += "\n"
+    secondary += body
+  }
+  return {
+    uid: uid,
+    appId: appId,
+    app: appName,
+    title: title,
+    subtitle: subtitle,
+    body: body,
+    primary: primary,
+    secondary: secondary,
+    category: parseInt(n.category, 10) || 0,
+    timestamp: epochOf(n.timestamp),
+    silent: n.silent === true,
+    positive: n.positive_action === true,
+    negative: n.negative_action === true,
+    messages: appId === APP_ID_MESSAGES,
+    otp: extractOtp(title + " " + subtitle + " " + body)
+  }
+}
+
+function parseNotifications(obj) {
+  var rows = asArray(obj && obj.notifications)
+  var out = []
+  var n = Math.min(rows.length, MAX_NOTICES * 2)
+  for (var i = 0; i < n && out.length < MAX_NOTICES; i++) {
+    var notice = parseNotification(rows[i])
+    if (notice) out.push(notice)
+  }
+  return out
+}
+
+function dropNotice(notifications, uid) {
+  var list = notifications || []
+  var out = []
+  var n = Math.min(list.length, MAX_NOTICES)
+  var id = parseInt(uid, 10)
+  for (var i = 0; i < n; i++) {
+    if (!list[i] || list[i].uid === id) continue
+    out.push(list[i])
+  }
+  return out
+}
+
+function filterNotifications(notifications, needle) {
+  var list = notifications || []
+  var q = fold(needle).replace(/^\s+|\s+$/g, "")
+  if (!q) return list
+  var out = []
+  var n = Math.min(list.length, MAX_NOTICES)
+  for (var i = 0; i < n; i++) {
+    var notice = list[i]
+    if (!notice) continue
+    var hay = fold(notice.app) + " " + fold(notice.title) + " " + fold(notice.subtitle) + " " + fold(notice.body) + " " + fold(notice.appId)
+    if (hay.indexOf(q) >= 0) out.push(notice)
+  }
+  return out
+}
+
+function noticeCount(notifications) {
+  var n = Math.min((notifications || []).length, MAX_NOTICES)
+  if (n > 99) return 99
+  return n
+}
+
+function threadForNotice(threads, notice) {
+  if (!notice) return null
+  if (notice.messages) {
+    var byHandle = threadByHandle(threads, notice.title)
+    if (byHandle) return byHandle
+  }
+  var title = fold(notice.title).replace(/^\s+|\s+$/g, "")
+  if (!title) return null
+  var list = threads || []
+  var n = Math.min(list.length, MAX_THREADS)
+  var exact = null
+  var exactCount = 0
+  for (var i = 0; i < n; i++) {
+    var t = list[i]
+    if (!t) continue
+    if (fold(t.name) === title) {
+      exact = t
+      exactCount += 1
+    }
+  }
+  if (exactCount === 1) return exact
+  return null
+}
+
 function liveCall(calls) {
   var list = calls || []
   var n = Math.min(list.length, MAX_CALLS)
@@ -372,8 +480,11 @@ function barLabel(unread, mapUp, daemonOk) {
 function statusTitle(status, daemonOk) {
   if (!daemonOk) return "Tether is not running"
   if (!status) return "Not connected"
+  if (status.map && status.ancs) return "Messages and notifications"
   if (status.map) return "Messages connected"
+  if (status.ancs) return "Notifications connected"
   if (status.note) return status.note
+  if (status.ancsReason) return status.ancsReason
   if (status.present) return "Phone linked, Messages not ready"
   return "Pair your iPhone"
 }
@@ -383,6 +494,13 @@ function setupHint(status, daemonOk) {
   if (status && status.note) return status.note
   if (status && status.present) return "On the iPhone: Settings → Bluetooth → this PC → Show Message Notifications and Sync Contacts."
   return "Pair the iPhone in Tether, then enable message notifications on the phone."
+}
+
+function ancsHint(status, daemonOk) {
+  if (!daemonOk) return "Open Tether to start the daemon, then pair your iPhone."
+  if (status && status.ancsReason) return status.ancsReason
+  if (status && status.present) return "On the iPhone: Settings → Bluetooth → this PC → Show Message Notifications."
+  return "Pair the iPhone in Tether to mirror notifications."
 }
 
 function needsSolicit(status) {

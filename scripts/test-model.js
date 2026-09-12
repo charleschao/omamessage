@@ -101,6 +101,20 @@ const conn = M.parseConnection({ device_present: true, map_open: false, map_erro
 eq("solicit", M.needsSolicit(conn), true)
 eq("status note", M.statusTitle(conn, true), "Enable Messages")
 eq("daemon down", M.statusTitle(conn, false), "Tether is not running")
+eq("ancs down", conn.ancs, false)
+
+const linked = M.parseConnection({
+  device_present: true,
+  map_open: true,
+  pbap_open: true,
+  ancs_ready: true,
+  ancs_reason: "Notification mirroring is active.",
+  profile_reason: "Messages and contacts are connected."
+})
+eq("ancs up", linked.ancs, true)
+eq("ancs reason", linked.ancsReason, "Notification mirroring is active.")
+eq("status both", M.statusTitle(linked, true), "Messages and notifications")
+eq("ancs hint ready", M.ancsHint(linked, true), "Notification mirroring is active.")
 
 const msgs = M.parseMessages({
   messages: [
@@ -135,6 +149,48 @@ eq("suggestions count", suggestions.length, 2)
 eq("suggestion phone", suggestions[0].handle, "tel:+1555")
 eq("suggestion email", suggestions[1].handle, "email:ada@x.test")
 eq("suggestion kinds", [suggestions[0].kind, suggestions[1].kind], ["phone", "email"])
+
+const notices = M.parseNotifications({
+  notifications: [
+    {
+      uid: 134,
+      app_id: "ch.protonmail.protonmail",
+      app_name: "Proton Mail",
+      title: "Chase Credit Journey",
+      subtitle: "",
+      body: "Here's your latest Credit Summary",
+      category: 0,
+      timestamp: 1789069358,
+      silent: false,
+      positive_action: false,
+      negative_action: true
+    },
+    {
+      uid: 12,
+      app_id: "com.apple.MobileSMS",
+      app_name: "Messages",
+      title: "Ada",
+      body: "Your verification code is 482193",
+      category: 4,
+      timestamp: localNoon,
+      negative_action: true
+    },
+    { uid: -1, title: "bad" },
+    { title: "no uid" }
+  ]
+})
+eq("notice count", notices.length, 2)
+eq("notice app", notices[0].app, "Proton Mail")
+eq("notice primary", notices[0].primary, "Chase Credit Journey")
+eq("notice secondary", notices[0].secondary, "Here's your latest Credit Summary")
+eq("notice dismiss", notices[0].negative, true)
+eq("sms notice", notices[1].messages, true)
+eq("sms otp", notices[1].otp, "482193")
+eq("notice cap drop", M.dropNotice(notices, 134).length, 1)
+eq("notice filter", M.filterNotifications(notices, "proton")[0].uid, 134)
+eq("notice total", M.noticeCount(notices), 2)
+eq("sms thread", M.threadForNotice(threads, notices[1]).handle, "tel:+15551212")
+eq("mail no thread", M.threadForNotice(threads, notices[0]), null)
 
 if (failed) {
   console.error(failed + " failed")

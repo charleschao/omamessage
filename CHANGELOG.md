@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.5.0] — 2026-09-10
+
+- Messages and Notifications tabs, matching Tether's ANCS inbox (`bt_list_notifications`)
+- Dismiss a mirrored notification with a small X on the row (not a Dismiss chip); copy a one-time code; open the SMS thread when the notice is from Messages
+- Live updates on `bt_notification` / `bt_notification_removed`; connection line includes `ancs_ready`
+- Transcript stays put if you have scrolled up (same pin-to-bottom rule as tether-gtk 0.2.27)
+- Keyboard: `h`/`l` switch tabs, `x` dismisses the selected notification
+- Message box stays clickable after Send (it used to disable for the whole Bluetooth send and then ignore clicks)
+
 ## [0.4.3] — 2026-09-06
 
 - Open only `https` message links (no userinfo, no IP or localhost)

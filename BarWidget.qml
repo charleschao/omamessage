@@ -13,23 +13,26 @@ BarWidget {
 
   property bool daemonOk: false
   property int reconnectAttempt: 0
-  property var status: ({ present: false, paired: false, map: false, pbap: false, classic: false, le: false, mapError: "", note: "", linkReason: "", profileReason: "" })
+  property var status: ({ present: false, paired: false, map: false, pbap: false, classic: false, le: false, ancs: false, mapError: "", note: "", linkReason: "", profileReason: "", ancsReason: "" })
   property var devices: []
   property var threads: []
   property var messages: []
   property var contacts: []
   property var calls: []
+  property var notifications: []
   property var drafts: Model.emptyDict()
   property var markedRead: Model.emptyDict()
   property string sockBuf: ""
   property string pendingCopy: ""
   property string contactQuery: ""
   property string page: "inbox"
+  property string tab: "messages"
   property var selectedThread: null
   property string replyDraft: ""
   property string composeTo: ""
   property string composeBody: ""
   property bool sending: false
+  property string pendingBody: ""
   property string actionNote: ""
 
   readonly property string socketPath: {
@@ -39,7 +42,9 @@ BarWidget {
   }
   readonly property bool socketUp: !!(socketLoader.item && socketLoader.item.connected)
   readonly property bool mapUp: status && status.map === true
+  readonly property bool ancsUp: status && status.ancs === true
   readonly property int unreadCount: Model.unreadTotal(threads)
+  readonly property int noticeCount: Model.noticeCount(notifications)
   readonly property var ringingCall: Model.liveCall(calls)
   readonly property string displayText: Model.barLabel(root.unreadCount, root.mapUp, root.daemonOk)
   readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
@@ -79,6 +84,7 @@ BarWidget {
     root.sendCmd({ command: "bt_list_devices" })
     root.sendCmd({ command: "bt_list_threads" })
     root.sendCmd({ command: "bt_list_calls" })
+    root.sendCmd({ command: "bt_list_notifications" })
   }
 
   function onSocketUp() {
@@ -91,6 +97,7 @@ BarWidget {
   function onSocketDown() {
     root.daemonOk = false
     root.sending = false
+    root.pendingBody = ""
     root.sockBuf = ""
     sendWatchdog.stop()
   }
@@ -128,6 +135,21 @@ BarWidget {
       root.calls = Model.parseCalls(ev)
       return
     }
+    if (cmd === "bt_notifications") {
+      root.notifications = Model.parseNotifications(ev)
+      return
+    }
+    if (cmd === "bt_notification" || cmd === "bt_notification_removed") {
+      root.sendCmd({ command: "bt_list_notifications" })
+      return
+    }
+    if (cmd === "bt_notification_action_result") {
+      if (ev.success !== true)
+        root.setNote(ev.message || "The iPhone would not take the dismissal.")
+      else
+        root.sendCmd({ command: "bt_list_notifications" })
+      return
+    }
     if (cmd === "bt_message") {
       root.sendCmd({ command: "bt_list_threads" })
       if (root.selectedThread && ev.thread === root.selectedThread.handle)
@@ -138,11 +160,18 @@ BarWidget {
       root.sending = false
       sendWatchdog.stop()
       if (ev.success === true) {
-        root.replyDraft = ""
-        root.composeBody = ""
+        // Only clear if the box still holds the sent text. A follow-up typed
+        // while the first send was in flight must stay.
+        if (root.replyDraft === root.pendingBody) root.replyDraft = ""
+        if (root.composeBody === root.pendingBody) root.composeBody = ""
+        root.pendingBody = ""
         if (root.selectedThread) root.loadMessages(root.selectedThread.handle)
         root.sendCmd({ command: "bt_list_threads" })
       } else {
+        if (!String(root.replyDraft || "") && !String(root.composeBody || "") && root.pendingBody) {
+          if (root.page === "compose") root.composeBody = root.pendingBody
+          else root.replyDraft = root.pendingBody
+        }
         root.setNote(ev.message || "The message was not sent.")
       }
       return
@@ -197,7 +226,7 @@ BarWidget {
     Quickshell.execDetached(["/usr/bin/uwsm-app", "--", "tether-gtk"])
   }
 
-  function showInbox() {
+  function backToList() {
     if (root.page === "thread" && root.selectedThread)
       root.stashDraft(root.selectedThread.handle, root.replyDraft)
     root.page = "inbox"
@@ -210,7 +239,30 @@ BarWidget {
     root.actionNote = ""
   }
 
+  function showInbox() {
+    root.tab = "messages"
+    root.backToList()
+  }
+
+  function showNotifications() {
+    root.tab = "notifications"
+    root.backToList()
+    root.sendCmd({ command: "bt_list_notifications" })
+    if (panelLoader.item && !root.opened) panelLoader.item.open()
+  }
+
+  function setTab(name) {
+    var t = String(name || "")
+    if (t !== "messages" && t !== "notifications") return
+    if (root.page !== "inbox") root.backToList()
+    root.tab = t
+    root.actionNote = ""
+    if (t === "notifications")
+      root.sendCmd({ command: "bt_list_notifications" })
+  }
+
   function showCompose() {
+    root.tab = "messages"
     root.stashDraft(root.selectedThread ? root.selectedThread.handle : "", root.replyDraft)
     root.page = "compose"
     root.selectedThread = null
@@ -287,6 +339,7 @@ BarWidget {
       root.setNote("Tether is not running.")
       return false
     }
+    root.pendingBody = t
     root.sending = true
     sendWatchdog.restart()
     return true
@@ -362,6 +415,32 @@ BarWidget {
       root.setNote("Tether is not running.")
   }
 
+  function dismissNotice(notice) {
+    if (!notice || notice.uid == null) return
+    if (!notice.negative) {
+      root.setNote("That notification cannot be dismissed from here.")
+      return
+    }
+    if (!root.sendCmd({ command: "bt_notification_action", uid: notice.uid, action: "negative" })) {
+      root.setNote("Tether is not running.")
+      return
+    }
+    root.notifications = Model.dropNotice(root.notifications, notice.uid)
+  }
+
+  function activateNotice(notice) {
+    if (!notice) return
+    var match = Model.threadForNotice(root.threads, notice)
+    if (match) {
+      root.openThread(match)
+      return
+    }
+    if (notice.otp) {
+      root.copyText(notice.otp)
+      return
+    }
+  }
+
   function answerCall() {
     var c = root.ringingCall
     var msg = { command: "bt_call_action", action: "answer" }
@@ -413,6 +492,7 @@ BarWidget {
     repeat: false
     onTriggered: {
       root.sending = false
+      root.pendingBody = ""
       root.setNote("Send timed out.")
     }
   }
@@ -507,6 +587,7 @@ BarWidget {
     function toggle(): void { root.togglePanel() }
     function inbox(): void { root.showInbox() }
     function contacts(): void { root.showCompose() }
+    function notifications(): void { root.showNotifications() }
   }
 
   WidgetButton {
@@ -517,12 +598,17 @@ BarWidget {
     fontSize: Style.bar.iconFont
     tooltipText: {
       var status = Model.statusTitle(root.status, root.daemonOk)
+      var bits = []
       if (root.mapUp && root.unreadCount > 0)
-        return Model.neutralizeUi(root.unreadCount + " unread · " + status)
+        bits.push(root.unreadCount + " unread")
+      if (root.ancsUp && root.noticeCount > 0)
+        bits.push(root.noticeCount + " notifications")
+      if (bits.length)
+        return Model.neutralizeUi(bits.join(" · ") + " · " + status)
       return Model.neutralizeUi(status)
     }
     active: root.mapUp && root.unreadCount > 0
-    dimmed: !root.mapUp
+    dimmed: !root.mapUp && !root.ancsUp
     onPressed: function(b) {
       if (b === Qt.MiddleButton) root.openApp()
       else if (b === Qt.RightButton) root.showInbox()
