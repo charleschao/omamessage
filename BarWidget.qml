@@ -37,6 +37,7 @@ BarWidget {
   property string pendingBody: ""
   property string pendingThread: ""
   property var readWatermarks: Model.emptyDict()
+  property var markAllQueue: []
   property string actionNote: ""
 
   readonly property string socketPath: {
@@ -144,12 +145,22 @@ BarWidget {
     }
     if (cmd === "bt_messages") {
       var key = String(ev.thread || "")
-      if (!root.selectedThread || !Model.sameThread(root.selectedThread.handle, key)) return
-      var msgs = Model.mergeMessages(Model.parseMessages(ev), root.messages, key)
-      root.adoptThreadKey(key)
-      root.messages = msgs
-      root.messagesLoading = false
-      root.markRead(msgs)
+      var msgs = Model.parseMessages(ev)
+      var queue = root.markAllQueue || []
+      if (queue.length) root.markRead(msgs)
+      if (root.selectedThread && Model.sameThread(root.selectedThread.handle, key)) {
+        root.adoptThreadKey(key)
+        root.messages = Model.mergeMessages(msgs, root.messages, key)
+        root.messagesLoading = false
+        if (!queue.length) root.markRead(root.messages)
+      }
+      if (queue.length && Model.sameThread(queue[0], key)) {
+        var rest = []
+        var i
+        for (i = 1; i < queue.length; i++) rest.push(queue[i])
+        root.markAllQueue = rest
+        root.pumpMarkAll()
+      }
       return
     }
     if (cmd === "bt_contacts") {
@@ -362,6 +373,32 @@ BarWidget {
     if (!pending.length) return
     root.markedRead = seen
     root.sendCmd({ command: "bt_mark_read", handles: pending, read: true })
+  }
+
+  function markAllRead() {
+    if (!root.mapUp) {
+      root.setNote("Tether is not running.")
+      return
+    }
+    var queue = Model.unreadThreadHandles(root.threads)
+    var now = Date.now() / 1000
+    var i
+    for (i = 0; i < queue.length; i++)
+      root.readWatermarks = Model.markReadAt(root.readWatermarks, queue[i], now)
+    root.threads = Model.applyReadWatermarks(Model.zeroAllUnread(root.threads), root.readWatermarks)
+    root.markRead(root.messages)
+    if (!queue.length) {
+      root.setNote("No unread messages.")
+      return
+    }
+    root.markAllQueue = queue
+    root.pumpMarkAll()
+  }
+
+  function pumpMarkAll() {
+    var q = root.markAllQueue || []
+    if (!q.length) return
+    root.sendCmd({ command: "bt_list_messages", thread: q[0] })
   }
 
   function sendTo(handle, text) {

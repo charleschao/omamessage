@@ -1,6 +1,6 @@
 # Omamessage
 
-Omarchy bar inbox for iPhone SMS, iMessage, and notifications — driven by [Tether](https://github.com/zackb/tether) by **Zack Bartel**.
+Omarchy bar inbox for iPhone SMS, iMessage, and notification mirroring — driven by [Tether](https://github.com/zackb/tether) by **Zack Bartel**.
 
 Tether’s advantage over [BlueBubbles](https://bluebubbles.app/) is that you do **not** need a Mac or a macOS VM running in the background. Continuity-style features talk to the iPhone from Linux.
 
@@ -63,22 +63,79 @@ It does **not** stop or uninstall Tether. `tetherd`, `tether-gtk`, pairing, and 
 
 ## Features
 
-- Two tabs: **Messages** and **Notifications** (Tether's ANCS mirror)
-- Bar icon: speech bubble, with the unread count beside it when something is unread
-- Conversation list with search (`/`), unread badges, relative times
-- Transcript with day headings, grouped bubbles, clickable links
-- Reply, new message (`n`) with contact typeahead
-- Copy a verification code when an SMS or notification is a one-time code
-- Dismiss a mirrored notification on the iPhone
-- Incoming call banner (audio stays on the iPhone)
+### Bar
+
+- Nerd Font speech bubble (`󰍡`)
+- Unread SMS count beside the icon; notification count when there is no unread SMS
+- Incoming call on the label (`call`) while the iPhone is ringing
+- Dim when Messages and notification mirroring are both down
 - Follows the Omarchy light or dark theme (`omarchy theme set`)
-- Middle-click the bar label, or first-run **Open Tether**: `tether-gtk`
 
-Keyboard: `j`/`k` move, Enter open, Esc back (Esc in search unfocuses first), `/` search, `n` new message, `h`/`l` switch tabs, `x` dismiss notification. Right-click the bar icon to open the latest unread chat. Right-click or hold a bubble to copy it.
+### Messages
 
-Clipboard, files, pairing, Bluetooth setup, and desktop notification popups stay in Tether. The bar is the inbox and the notification list.
+- Conversation list with search, unread badges, and relative times
+- **New** message with iPhone contact typeahead (every phone and email Tether returns)
+- Reply from a thread; Send shows **Sending…** until Tether answers
+- Failed or timed-out send restores the draft and offers **Retry**
+- Transcript: day headings, grouped bubbles, sender names in group chats
+- https links open in the browser (the pane stays open)
+- Copy a bubble (right-click or hold); copy chip when an SMS is a one-time code
+- Opening a chat shows **Loading…** instead of a blank pane
+- Drafts and unread-cleared state follow the person across number spellings (`tel:+1…` / `tel:…`)
+- Transcript stays put if you have scrolled up; your own send still jumps to the bottom
+- First-run empty state: **Open Tether** and **Ask iPhone** (re-advertise Bluetooth permissions)
 
-Car-kit limits (groups, tapbacks, attachments, no blue/green bubbles) are Tether/iOS MAP, not this UI.
+### Notifications
+
+- Tether’s ANCS mirror in a second tab
+- Dismiss on the iPhone with the small X on the row
+- Copy a one-time code from a mirrored notice
+- A Messages notice opens that SMS thread; any other notice copies its text
+
+### Calls
+
+- Incoming-call banner in the popout: Answer / Decline (or Hang up)
+- Audio stays on the iPhone
+
+Clipboard sync, file transfer, pairing, Bluetooth adapter, retention, OTP vault, and desktop notification *popups* stay in Tether (`tether-gtk` / `tetherd` / the iOS app). Omamessage is the bar inbox and the notification list.
+
+## Keyboard
+
+Shortcuts apply while the popout is focused and you are not typing in Search, To, or Message.
+
+| Key | Action |
+| --- | --- |
+| `j` / `k` or ↓ / ↑ | Move in the conversation or notification list |
+| Enter or Space | Open the selected row |
+| `h` / `l` or ← / → | Messages ↔ Notifications (from the inbox); ← / `h` is Back in a thread |
+| `n` | Notifications tab |
+| `b` or Esc | Back to the list (Esc from the inbox closes the pane) |
+| `/` | Search |
+| `x` | Dismiss the selected notification |
+| `Ctrl+A` | Mark all conversations read |
+| Tab | Next Omarchy bar popout |
+| Esc in Search | Clear the query, then unfocus (does not close the pane) |
+
+**New** is the button on the Messages tab (not `n`). `Ctrl+A` in a text field still selects all in that field.
+
+## Mouse
+
+| Action | Result |
+| --- | --- |
+| Left-click the bar icon | Toggle the popout |
+| Right-click the bar icon | Open the latest unread chat (or the inbox if none) |
+| Middle-click the bar icon | Open `tether-gtk` |
+| Click ← | Back to the list |
+| Click a https link in a bubble | Open it |
+| Right-click or hold a bubble | Copy the message |
+| Click a non-Messages notification | Copy its text |
+| Click the X on a notification | Dismiss it on the iPhone |
+
+## Limits
+
+Car-kit / MAP limits (not this UI): no tapbacks, no attachments, no blue/green iMessage bubbles, group reply only when Tether has a roster.
+
+https links only (no `http`, no userinfo, no IP or localhost).
 
 ## Credit
 
@@ -94,6 +151,8 @@ Plugin id: `io.github.charleschao.omamessage`
 Listing copy and the submit checklist: [docs/MARKETPLACE.md](docs/MARKETPLACE.md)
 
 Publish flow: [docs/PUBLISH.md](docs/PUBLISH.md)
+
+Changelog: [CHANGELOG.md](CHANGELOG.md)
 
 ## License
 

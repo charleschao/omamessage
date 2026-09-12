@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.5.2] — 2026-09-12
+
+- Clicking a link in a message opens it. The copy overlay had been letting that click close the pane.
+- Keyboard: `b` back, `n` Notifications tab, `Ctrl+A` mark all messages read.
+
 ## [0.5.1] — 2026-09-12
 
 - Sent messages show in the open conversation immediately. A send used to wait on a message list that could arrive under a different thread key (`tel:+1…` vs `tel:…`), so the bubble only appeared after leaving and reopening the chat.

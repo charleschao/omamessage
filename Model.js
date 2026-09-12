@@ -572,6 +572,30 @@ function unreadHandles(messages) {
   return out
 }
 
+function unreadThreadHandles(threads) {
+  var list = threads || []
+  var out = []
+  var n = Math.min(list.length, MAX_THREADS)
+  var i
+  for (i = 0; i < n; i++) {
+    if (list[i] && list[i].unread > 0 && list[i].handle) out.push(list[i].handle)
+  }
+  return out
+}
+
+function zeroAllUnread(threads) {
+  var list = threads || []
+  var out = []
+  var n = Math.min(list.length, MAX_THREADS)
+  var i
+  for (i = 0; i < n; i++) {
+    var t = list[i]
+    if (!t) continue
+    out.push(t.unread ? copyThread(t, { unread: 0 }) : t)
+  }
+  return out
+}
+
 function pad2(n) {
   return n < 10 ? "0" + n : String(n)
 }

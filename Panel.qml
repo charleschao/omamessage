@@ -263,7 +263,20 @@ Panel {
           searchField.forceActiveFocus()
           return
         }
-        if (t === "n" && hw) hw.showCompose()
+        if ((t === "b" || t === "B") && hw && root.page !== "inbox") {
+          hw.backToList()
+          return
+        }
+        if ((t === "n" || t === "N") && hw) {
+          hw.setTab("notifications")
+          return
+        }
+      }
+
+      Shortcut {
+        sequence: "Ctrl+A"
+        enabled: root.opened && !searchField.activeFocus && !replyField.activeFocus && !toField.activeFocus && !composeField.activeFocus
+        onActivated: if (hw) hw.markAllRead()
       }
 
       Column {
@@ -958,23 +971,26 @@ Panel {
                   linkColor: root.accent
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.body
-                  onLinkActivated: function(link) {
-                    var href = Model.parseHttpsUrl(link)
-                    if (href) Qt.openUrlExternally(href)
-                  }
                 }
 
                 MouseArea {
                   anchors.fill: parent
                   acceptedButtons: Qt.LeftButton | Qt.RightButton
-                  propagateComposedEvents: true
+                  hoverEnabled: true
+                  preventStealing: true
+                  cursorShape: msgBody.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor
                   onClicked: function(mouse) {
+                    // Always accept. Rejecting a left click lets it fall through
+                    // the card and close the pane — the old copy overlay did that.
                     if (mouse.button === Qt.RightButton) {
                       if (hw && modelData.body) hw.copyText(modelData.body)
-                      mouse.accepted = true
-                    } else {
-                      mouse.accepted = false
+                      return
                     }
+                    var p = mapToItem(msgBody, mouse.x, mouse.y)
+                    var link = msgBody.linkAt(p.x, p.y)
+                    if (!link) return
+                    var href = Model.parseHttpsUrl(link)
+                    if (href) Qt.openUrlExternally(href)
                   }
                   onPressAndHold: if (hw && modelData.body) hw.copyText(modelData.body)
                 }
