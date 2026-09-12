@@ -66,38 +66,32 @@ It does **not** stop or uninstall Tether. `tetherd`, `tether-gtk`, pairing, and 
 ### Bar
 
 - Nerd Font speech bubble (`󰍡`)
-- Unread SMS count beside the icon; notification count when there is no unread SMS
-- Incoming call on the label (`call`) while the iPhone is ringing
-- Dim when Messages and notification mirroring are both down
-- Follows the Omarchy light or dark theme (`omarchy theme set`)
+- Unread SMS or notification count beside the icon
+- Incoming-call indicator while the iPhone is ringing
+- Follows the Omarchy light or dark theme
 
 ### Messages
 
-- Conversation list with search, unread badges, and relative times
-- **New** message with iPhone contact typeahead (every phone and email Tether returns)
-- Reply from a thread; Send shows **Sending…** until Tether answers
-- Failed or timed-out send restores the draft and offers **Retry**
-- Transcript: day headings, grouped bubbles, sender names in group chats
-- https links open in the browser (the pane stays open)
-- Copy a bubble (right-click or hold); copy chip when an SMS is a one-time code
-- Opening a chat shows **Loading…** instead of a blank pane
-- Drafts and unread-cleared state follow the person across number spellings (`tel:+1…` / `tel:…`)
-- Transcript stays put if you have scrolled up; your own send still jumps to the bottom
-- First-run empty state: **Open Tether** and **Ask iPhone** (re-advertise Bluetooth permissions)
+- Searchable conversation list with unread badges and relative times
+- New messages with iPhone contact typeahead, plus replies from any thread
+- Reliable sending with a visible Sending state, Retry, and draft restoration on failure
+- Thread transcript with day headings, grouped bubbles, and group-chat sender names
+- Links open in the browser; copy a bubble by right-clicking or holding it
+- Detected one-time codes show a clickable **Copy XXXXX code** action
+- First-run empty state with **Open Tether** and **Ask iPhone**
 
 ### Notifications
 
 - Tether’s ANCS mirror in a second tab
-- Dismiss on the iPhone with the small X on the row
-- Copy a one-time code from a mirrored notice
-- A Messages notice opens that SMS thread; any other notice copies its text
+- Dismiss notifications on the iPhone or copy detected one-time codes
+- Messages notices open the SMS thread; other notices copy their text
 
 ### Calls
 
-- Incoming-call banner in the popout: Answer / Decline (or Hang up)
+- Incoming-call banner with Answer, Decline, or Hang up
 - Audio stays on the iPhone
 
-Clipboard sync, file transfer, pairing, Bluetooth adapter, retention, OTP vault, and desktop notification *popups* stay in Tether (`tether-gtk` / `tetherd` / the iOS app). Omamessage is the bar inbox and the notification list.
+Pairing, Bluetooth, clipboard sync, file transfer, retention, OTP vault, and desktop notification *popups* stay in Tether. Omamessage is the bar inbox and notification list.
 
 ## Keyboard
 
@@ -109,7 +103,7 @@ Shortcuts apply while the popout is focused and you are not typing in Search, To
 | Enter or Space | Open the selected row |
 | `h` / `l` or ← / → | Messages ↔ Notifications (from the inbox); ← / `h` is Back in a thread |
 | `n` | Notifications tab |
-| `b` or Esc | Back to the list (Esc from the inbox closes the pane) |
+| `Esc` | Back to the list (from the inbox, closes the pane) |
 | `/` | Search |
 | `x` | Dismiss the selected notification |
 | `Ctrl+A` | Mark all conversations read |

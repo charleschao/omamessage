@@ -263,10 +263,6 @@ Panel {
           searchField.forceActiveFocus()
           return
         }
-        if ((t === "b" || t === "B") && hw && root.page !== "inbox") {
-          hw.backToList()
-          return
-        }
         if ((t === "n" || t === "N") && hw) {
           hw.setTab("notifications")
           return
