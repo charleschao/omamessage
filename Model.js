@@ -349,8 +349,43 @@ function parseNotification(row) {
     positive: n.positive_action === true,
     negative: n.negative_action === true,
     messages: appId === APP_ID_MESSAGES,
-    otp: extractOtp(title + " " + subtitle + " " + body)
+    otp: extractOtp(title + " " + subtitle + " " + body),
+    // ANCS normally supplies only text, but keep a daemon-supplied universal
+    // link when available. Otherwise recognize a complete web link in that
+    // text. A truncated iOS preview must never be opened as if it were exact.
+    webUrl: notificationWebUrl(n, title + " " + subtitle + " " + body)
   }
+}
+
+function completeNotificationUrl(url) {
+  var raw = String(url == null ? "" : url)
+  // iOS truncates long URLs with this character. The missing path segment can
+  // contain the Discord message ID or X status ID, so it is not recoverable.
+  if (raw.indexOf("…") >= 0 || /%e2%80%a6/i.test(raw)) return ""
+  return parseHttpsUrl(raw)
+}
+
+function notificationUrlInText(text) {
+  var raw = String(text == null ? "" : text)
+  var re = /(?:https?:\/\/|www\.|discord(?:app)?\.com\/|(?:web\.)?telegram\.org\/|t\.me\/|(?:www\.)?(?:x|twitter)\.com\/)[^\s<>"']+/ig
+  var m = re.exec(raw)
+  if (!m) return ""
+  var candidate = trimUrl(m[0])
+  if (!candidate) return ""
+  if (!/^https?:\/\//i.test(candidate)) candidate = "https://" + candidate
+  return completeNotificationUrl(candidate)
+}
+
+function notificationWebUrl(row, text) {
+  var keys = ["url", "link", "href", "deep_link", "web_url"]
+  var i
+  for (i = 0; i < keys.length; i++) {
+    var supplied = completeNotificationUrl(row && row[keys[i]])
+    if (supplied) return supplied
+  }
+  var embedded = notificationUrlInText(text)
+  if (embedded) return embedded
+  return ""
 }
 
 function parseNotifications(obj) {
@@ -1111,5 +1146,3 @@ function firstUnreadThread(threads) {
   }
   return null
 }
-
-

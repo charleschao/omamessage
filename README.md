@@ -122,7 +122,8 @@ Shortcuts apply while the popout is focused and you are not typing in Search, To
 | Click ← | Back to the list |
 | Click a https link in a bubble | Open it |
 | Right-click or hold a bubble | Copy the message |
-| Click a non-Messages notification | Copy its text |
+| Click a notification with a complete HTTPS link | Open that exact web destination (Discord, Telegram, and X links included) |
+| Click another non-Messages notification | Copy its text |
 | Click the X on a notification | Dismiss it on the iPhone |
 
 ## Limits

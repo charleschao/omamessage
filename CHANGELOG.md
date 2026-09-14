@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Clicking a notification with a complete HTTPS link now opens that exact destination. Truncated iOS URL previews are copied instead of opening a misleading partial link.
+
 ## [0.5.2] — 2026-09-12
 
 - Clicking a link in a message opens it. The copy overlay had been letting that click close the pane.

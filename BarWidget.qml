@@ -537,6 +537,10 @@ BarWidget {
       root.openThread(match)
       return
     }
+    if (notice.webUrl) {
+      Qt.openUrlExternally(notice.webUrl)
+      return
+    }
     if (notice.otp) {
       root.copyText(notice.otp)
       return
@@ -547,7 +551,8 @@ BarWidget {
       blob += notice.secondary
     }
     if (blob) root.copyText(blob)
-    else root.setNote("No conversation for that notification.")
+    if (blob) root.setNote("No complete web link in this notification; copied.")
+    else root.setNote("No conversation or web link for that notification.")
   }
 
   function answerCall() {

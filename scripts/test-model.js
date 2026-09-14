@@ -180,20 +180,32 @@ const notices = M.parseNotifications({
       timestamp: localNoon,
       negative_action: true
     },
+    {
+      uid: 42,
+      app_id: "com.hammerandchisel.discord",
+      app_name: "Discord",
+      body: "Reply in https://discord.com/channels/12/34/56.",
+      timestamp: localNoon
+    },
+    { uid: 43, app_id: "ph.telegra.Telegraph", app_name: "Telegram", body: "New message" },
+    { uid: 44, app_id: "com.atebits.Tweetie2", app_name: "X", body: "Read x.com/essenviews/sta…" },
     { uid: -1, title: "bad" },
     { title: "no uid" }
   ]
 })
-eq("notice count", notices.length, 2)
+eq("notice count", notices.length, 5)
 eq("notice app", notices[0].app, "Proton Mail")
 eq("notice primary", notices[0].primary, "Chase Credit Journey")
 eq("notice secondary", notices[0].secondary, "Here's your latest Credit Summary")
 eq("notice dismiss", notices[0].negative, true)
 eq("sms notice", notices[1].messages, true)
 eq("sms otp", notices[1].otp, "482193")
-eq("notice cap drop", M.dropNotice(notices, 134).length, 1)
+eq("notice embedded web url", notices[2].webUrl, "https://discord.com/channels/12/34/56")
+eq("telegram needs exact link", notices[3].webUrl, "")
+eq("truncated x link rejected", notices[4].webUrl, "")
+eq("notice cap drop", M.dropNotice(notices, 134).length, 4)
 eq("notice filter", M.filterNotifications(notices, "proton")[0].uid, 134)
-eq("notice total", M.noticeCount(notices), 2)
+eq("notice total", M.noticeCount(notices), 5)
 eq("sms thread", M.threadForNotice(threads, notices[1]).handle, "tel:+15551212")
 eq("mail no thread", M.threadForNotice(threads, notices[0]), null)
 
