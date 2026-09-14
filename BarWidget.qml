@@ -530,6 +530,29 @@ BarWidget {
     root.notifications = Model.dropNotice(root.notifications, notice.uid)
   }
 
+  function dismissAllNotices() {
+    var list = root.notifications || []
+    var remaining = list
+    var dismissed = 0
+    var i
+    for (i = 0; i < list.length; i++) {
+      var notice = list[i]
+      if (!notice || !notice.negative || notice.uid == null) continue
+      if (!root.sendCmd({ command: "bt_notification_action", uid: notice.uid, action: "negative" })) {
+        root.setNote(dismissed ? "Stopped after dismissing " + dismissed + " notifications." : "Tether is not running.")
+        break
+      }
+      remaining = Model.dropNotice(remaining, notice.uid)
+      dismissed += 1
+    }
+    if (!dismissed) {
+      root.setNote("No notifications can be dismissed from here.")
+      return
+    }
+    root.notifications = remaining
+    root.setNote("Dismissing " + dismissed + " notification" + (dismissed === 1 ? "." : "s."))
+  }
+
   function activateNotice(notice) {
     if (!notice) return
     var match = Model.threadForNotice(root.threads, notice)

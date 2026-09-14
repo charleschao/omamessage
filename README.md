@@ -121,10 +121,12 @@ Shortcuts apply while the popout is focused and you are not typing in Search, To
 | Middle-click the bar icon | Open `tether-gtk` |
 | Click ← | Back to the list |
 | Click a https link in a bubble | Open it |
-| Right-click or hold a bubble | Copy the message |
+| Drag across a bubble, then `Ctrl+C` | Copy selected text (or use `Ctrl+A`, then `Ctrl+C` for the whole message) |
+| Right-click or hold a bubble | Copy the whole message |
 | Click a notification with a complete HTTPS link | Open that exact web destination (Discord, Telegram, and X links included) |
 | Click another non-Messages notification | Copy its text |
 | Click the X on a notification | Dismiss it on the iPhone |
+| Click **Clear all** in Notifications | Dismiss all notifications that Tether permits this widget to dismiss |
 
 ## Limits
 

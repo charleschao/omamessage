@@ -421,7 +421,9 @@ Panel {
 
               TextField {
                 id: searchField
-                width: parent.width - (newBtn.visible ? newBtn.width + Style.space(8) : 0)
+                width: parent.width
+                  - (newBtn.visible ? newBtn.width + Style.space(8) : 0)
+                  - (clearNoticesBtn.visible ? clearNoticesBtn.width + Style.space(8) : 0)
                 anchors.verticalCenter: parent.verticalCenter
                 placeholderText: root.noticesTab ? "Search notifications" : "Search"
                 maximumLength: Model.MAX_NAME
@@ -454,6 +456,20 @@ Panel {
                 anchors.verticalCenter: parent.verticalCenter
                 enabled: root.mapUp
                 onClicked: if (hw) hw.showCompose()
+              }
+
+              Button {
+                id: clearNoticesBtn
+                visible: root.noticesTab
+                text: "Clear all"
+                bordered: true
+                foreground: root.fg
+                accent: root.accent
+                fontFamily: root.fontFamily
+                fontSize: Style.font.bodySmall
+                anchors.verticalCenter: parent.verticalCenter
+                enabled: root.ancsUp && root.notifications.length > 0
+                onClicked: if (hw) hw.dismissAllNotices()
               }
             }
           }
@@ -954,39 +970,34 @@ Panel {
                   ? Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.08)
                   : (modelData.mine ? root.outFill : root.inFill)
 
-                Text {
+                TextEdit {
                   id: msgBody
                   anchors.verticalCenter: parent.verticalCenter
                   anchors.left: parent.left
                   anchors.leftMargin: Style.space(12)
                   width: Math.min(msgList.width * 0.70, implicitWidth)
-                  textFormat: Text.StyledText
+                  readOnly: true
+                  selectByMouse: true
+                  selectByKeyboard: true
+                  textFormat: TextEdit.RichText
                   text: modelData.html || ""
-                  wrapMode: Text.Wrap
+                  wrapMode: TextEdit.Wrap
                   color: root.fg
-                  linkColor: root.accent
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.body
+                  onLinkActivated: function(link) {
+                    var href = Model.parseHttpsUrl(link)
+                    if (href) Qt.openUrlExternally(href)
+                  }
                 }
 
                 MouseArea {
                   anchors.fill: parent
-                  acceptedButtons: Qt.LeftButton | Qt.RightButton
-                  hoverEnabled: true
+                  acceptedButtons: Qt.RightButton
                   preventStealing: true
-                  cursorShape: msgBody.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor
                   onClicked: function(mouse) {
-                    // Always accept. Rejecting a left click lets it fall through
-                    // the card and close the pane — the old copy overlay did that.
-                    if (mouse.button === Qt.RightButton) {
-                      if (hw && modelData.body) hw.copyText(modelData.body)
-                      return
-                    }
-                    var p = mapToItem(msgBody, mouse.x, mouse.y)
-                    var link = msgBody.linkAt(p.x, p.y)
-                    if (!link) return
-                    var href = Model.parseHttpsUrl(link)
-                    if (href) Qt.openUrlExternally(href)
+                    if (mouse.button === Qt.RightButton && hw && modelData.body)
+                      hw.copyText(modelData.body)
                   }
                   onPressAndHold: if (hw && modelData.body) hw.copyText(modelData.body)
                 }
