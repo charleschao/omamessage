@@ -368,11 +368,17 @@ BarWidget {
     for (var i = 0; i < handles.length; i++) {
       if (seen[handles[i]]) continue
       pending.push(handles[i])
-      seen[handles[i]] = true
     }
     if (!pending.length) return
+    // tetherd accepts one MAP message handle per bt_mark_read command. Sending
+    // an array under "handles" is silently ignored by the daemon, leaving the
+    // phone's unread state unchanged.
+    for (i = 0; i < pending.length; i++) {
+      if (!root.sendCmd({ command: "bt_mark_read", handle: pending[i], read: true }))
+        break
+      seen[pending[i]] = true
+    }
     root.markedRead = seen
-    root.sendCmd({ command: "bt_mark_read", handles: pending, read: true })
   }
 
   function markAllRead() {

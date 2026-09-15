@@ -740,7 +740,10 @@ Panel {
             }
 
             MouseArea {
-              z: -1
+              // Keep the row action above its visual background. The content
+              // stays above this area so the dismiss button retains its own
+              // click target.
+              z: 0
               anchors.fill: parent
               onClicked: {
                 root.cursorActive = false
@@ -750,12 +753,14 @@ Panel {
             }
 
             Rectangle {
+              z: -1
               anchors.fill: parent
               color: nHover.hovered || (noticeRow.current && root.cursorActive) ? root.hoverFill : "transparent"
             }
 
             Column {
               id: noticeBody
+              z: 1
               anchors.left: parent.left
               anchors.right: parent.right
               anchors.leftMargin: Style.space(16)

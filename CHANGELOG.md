@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## [0.5.3] — 2026-09-14
 
+- Mark-read requests now use Tether's one-message `handle` protocol, so opening a conversation and **Mark all read** update the iPhone correctly.
 - Clicking a notification with a complete HTTPS link now opens that exact destination. Truncated iOS URL previews are copied instead of opening a misleading partial link.
 - Message bubbles support mouse and keyboard text selection, so a selected portion can be copied with `Ctrl+C`.
 - Notifications has a **Clear all** control beside Search; it dismisses every notification for which Tether exposes the dismiss action.
