@@ -50,7 +50,7 @@ Manual setup: requires Tether by Zack Bartel (github.com/zackb/tether) installed
 - [ ] manifest description mentions the dependency and credit
 - [ ] LICENSE notes this is the widget only
 - [ ] README, LICENSE, and manifest credit Zack Bartel (not the popout chrome)
-- [ ] `preview.png` is at the repo root
+- [ ] If including `preview.png`, it contains only synthetic demo data and has been inspected for personal information (currently omitted for privacy)
 - [ ] Submit form: category Widgets; tags Bar, Quickshell, Hyprland (max three)
 - [ ] `omarchy plugin validate` passes on a clean clone
 - [ ] Test machine has `tetherd` on PATH; a machine without it fails clearly

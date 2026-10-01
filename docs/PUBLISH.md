@@ -34,7 +34,10 @@ Availability: **Manual setup**. Ask reviewers to apply the `manual-setup` label.
 Manual setup: requires Tether by Zack Bartel (github.com/zackb/tether) installed separately. Please apply manual-setup. Note: This plugin requires additional setup before it can be enabled. Follow the upstream installation instructions.
 ```
 
-`preview.png` at the repo root (marketplace optimizes it).
+An optional `preview.png` at the repo root is optimized by the marketplace. Use
+only synthetic demo data: no real names, phone numbers, message contents,
+verification codes, tracking numbers, or other personal information. Inspect the
+entire image before publishing. The preview is currently omitted for privacy.
 
 ## 3. Submit
 
