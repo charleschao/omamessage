@@ -27,7 +27,6 @@ Panel {
   readonly property bool daemonOk: hw ? hw.daemonOk : false
   readonly property bool mapUp: hw ? hw.mapUp : false
   readonly property bool ancsUp: hw ? hw.ancsUp : false
-  readonly property bool sending: hw ? hw.sending : false
   readonly property bool sendFailed: hw ? hw.sendFailed : false
   readonly property bool messagesLoading: hw ? hw.messagesLoading : false
   readonly property string actionNote: hw ? hw.actionNote : ""
@@ -158,9 +157,8 @@ Panel {
   function sendReplyNow() {
     if (!hw || !replyField.text.replace(/^\s+|\s+$/g, "") || !root.selectedThread) return
     if (!hw.sendTo(root.selectedThread.handle, replyField.text)) return
-    // Keep the binding. Assigning replyField.text breaks it and the field
-    // stops taking clicks after the send-disable cycle.
-    hw.replyDraft = ""
+    // The host clears the draft when queued. Keep the field's text binding
+    // intact so the composer continues taking clicks after each send.
     msgList.pinToEnd = true
     Qt.callLater(function() {
       root.focusComposer()
@@ -173,7 +171,6 @@ Panel {
     hw.composeTo = toField.text
     hw.composeBody = composeField.text
     if (!hw.sendNew()) return
-    hw.composeBody = ""
     Qt.callLater(root.focusComposer)
   }
 
@@ -423,6 +420,7 @@ Panel {
                 id: searchField
                 width: parent.width
                   - (newBtn.visible ? newBtn.width + Style.space(8) : 0)
+                  - (readAllBtn.visible ? readAllBtn.width + Style.space(8) : 0)
                   - (clearNoticesBtn.visible ? clearNoticesBtn.width + Style.space(8) : 0)
                 anchors.verticalCenter: parent.verticalCenter
                 placeholderText: root.noticesTab ? "Search notifications" : "Search"
@@ -456,6 +454,20 @@ Panel {
                 anchors.verticalCenter: parent.verticalCenter
                 enabled: root.mapUp
                 onClicked: if (hw) hw.showCompose()
+              }
+
+              Button {
+                id: readAllBtn
+                visible: root.messagesTab
+                text: "Read all"
+                bordered: true
+                foreground: root.fg
+                accent: root.accent
+                fontFamily: root.fontFamily
+                fontSize: Style.font.bodySmall
+                anchors.verticalCenter: parent.verticalCenter
+                enabled: root.mapUp && !!hw && hw.unreadCount > 0
+                onClicked: if (hw) hw.markAllRead()
               }
 
               Button {
@@ -1179,14 +1191,14 @@ Panel {
 
             Button {
               id: sendBtn
-              text: root.sending ? "Sending…" : "Send"
+              text: "Send"
               bordered: true
               foreground: root.fg
               accent: root.accent
               fontFamily: root.fontFamily
               fontSize: Style.font.bodySmall
               anchors.verticalCenter: parent.verticalCenter
-              enabled: root.repliable && root.mapUp && !root.sending && replyField.text.replace(/^\s+|\s+$/g, "").length > 0
+              enabled: root.repliable && root.mapUp && replyField.text.replace(/^\s+|\s+$/g, "").length > 0
               onClicked: root.sendReplyNow()
             }
           }
@@ -1229,14 +1241,14 @@ Panel {
 
             Button {
               id: composeSend
-              text: root.sending ? "Sending…" : "Send"
+              text: "Send"
               bordered: true
               foreground: root.fg
               accent: root.accent
               fontFamily: root.fontFamily
               fontSize: Style.font.bodySmall
               anchors.verticalCenter: parent.verticalCenter
-              enabled: root.mapUp && !root.sending && toField.text.replace(/^\s+|\s+$/g, "").length > 0 && composeField.text.replace(/^\s+|\s+$/g, "").length > 0
+              enabled: root.mapUp && toField.text.replace(/^\s+|\s+$/g, "").length > 0 && composeField.text.replace(/^\s+|\s+$/g, "").length > 0
               onClicked: root.sendComposeNow()
             }
           }
@@ -1274,6 +1286,7 @@ Panel {
             accent: root.accent
             fontFamily: root.fontFamily
             fontSize: Style.font.caption
+            enabled: root.mapUp
             onClicked: if (hw) hw.retrySend()
           }
         }

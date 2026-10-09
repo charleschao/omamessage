@@ -16,7 +16,9 @@ BarWidget {
   property var status: ({ present: false, paired: false, map: false, pbap: false, classic: false, le: false, ancs: false, mapError: "", note: "", linkReason: "", profileReason: "", ancsReason: "" })
   property var devices: []
   property var threads: []
-  property var messages: []
+  property var serverMessages: []
+  readonly property var messages: root.selectedThread
+    ? Model.mergeMessages(root.serverMessages, root.outbox, root.selectedThread.handle) : []
   property var contacts: []
   property var calls: []
   property var notifications: []
@@ -31,11 +33,22 @@ BarWidget {
   property string replyDraft: ""
   property string composeTo: ""
   property string composeBody: ""
-  property bool sending: false
-  property bool sendFailed: false
+  property var outbox: []
+  property var sendQueue: []
+  property var activeSend: null
+  property string sendSession: "local-omamessage-" + String(Date.now()) + "-" + String(Math.random()).slice(2)
+  property int sendSerial: 0
+  readonly property bool sending: root.activeSend !== null
+  readonly property var failedSend: {
+    if (!root.selectedThread) return null
+    for (var i = root.outbox.length - 1; i >= 0; i--) {
+      var row = root.outbox[i]
+      if (row.failed && Model.sameThread(row.thread, root.selectedThread.handle)) return row
+    }
+    return null
+  }
+  readonly property bool sendFailed: !!root.failedSend
   property bool messagesLoading: false
-  property string pendingBody: ""
-  property string pendingThread: ""
   property var readWatermarks: Model.emptyDict()
   property var markAllQueue: []
   property string actionNote: ""
@@ -102,28 +115,54 @@ BarWidget {
   function onSocketDown() {
     root.daemonOk = false
     root.sockBuf = ""
-    sendWatchdog.stop()
-    if (root.sending) root.failSend("Tether is not running.")
-    else {
-      root.sending = false
-      root.pendingBody = ""
-      root.pendingThread = ""
-    }
+    root.unconfirmSend("Connection lost; the message may already have been sent.")
   }
 
-  function failSend(reason) {
-    root.sending = false
-    sendWatchdog.stop()
-    if (root.pendingBody)
-      root.messages = Model.dropLocalOutgoing(root.messages, root.pendingBody)
-    if (root.pendingBody && !String(root.replyDraft || "") && !String(root.composeBody || "")) {
-      if (root.page === "compose") root.composeBody = root.pendingBody
-      else root.replyDraft = root.pendingBody
+  function finishSend(item, success, reason, unconfirmed) {
+    if (!item) return
+    var active = root.activeSend && root.activeSend.handle === item.handle
+    if (active) {
+      sendWatchdog.stop()
+      root.activeSend = null
     }
-    root.sendFailed = true
-    root.pendingBody = ""
-    root.pendingThread = ""
-    root.setNote(reason || "The message was not sent.")
+    root.outbox = Model.updateOutgoing(root.outbox, item.handle, {
+      pending: false, queued: false, failed: !success && !unconfirmed,
+      unconfirmed: unconfirmed === true, reason: reason || ""
+    })
+    if (!success) {
+      if (!unconfirmed) {
+        // Restore only this recipient's draft, without replacing newer typing.
+        if (root.selectedThread && Model.sameThread(root.selectedThread.handle, item.thread)
+            && root.page === "thread" && !root.replyDraft)
+          root.replyDraft = item.body
+        else if (!Model.getDraft(root.drafts, item.thread))
+          root.stashDraft(item.thread, item.body)
+      }
+      if (root.selectedThread && Model.sameThread(root.selectedThread.handle, item.thread))
+        root.setNote(reason || "The message was not sent.")
+    } else {
+      if (root.selectedThread && Model.sameThread(root.selectedThread.handle, item.thread)
+          && root.actionNote === Model.neutralizeUi(item.reason || ""))
+        root.actionNote = ""
+      root.sendCmd({ command: "bt_list_threads" })
+    }
+    if (active) root.pumpSendQueue()
+  }
+
+  function unconfirmSend(reason) {
+    root.finishSend(root.activeSend, false, reason, true)
+  }
+
+  function pumpSendQueue() {
+    if (root.activeSend || !root.socketUp || !root.mapUp || !root.sendQueue.length) return
+    var item = root.sendQueue[0]
+    root.sendQueue = root.sendQueue.slice(1)
+    root.activeSend = item
+    root.outbox = Model.updateOutgoing(root.outbox, item.handle, { queued: false })
+    sendWatchdog.restart()
+    if (!root.sendCmd({ command: "bt_send_message", thread: item.thread,
+                        body: item.body, operation_id: item.handle }))
+      root.finishSend(item, false, "Tether is not running.", false)
   }
 
   function handleLine(line) {
@@ -133,6 +172,7 @@ BarWidget {
     if (cmd === "bt_connection_changed") {
       root.daemonOk = true
       root.status = Model.parseConnection(ev)
+      root.pumpSendQueue()
       return
     }
     if (cmd === "bt_threads") {
@@ -150,7 +190,7 @@ BarWidget {
       if (queue.length) root.markRead(msgs)
       if (root.selectedThread && Model.sameThread(root.selectedThread.handle, key)) {
         root.adoptThreadKey(key)
-        root.messages = Model.mergeMessages(msgs, root.messages, key)
+        root.serverMessages = msgs
         root.messagesLoading = false
         if (!queue.length) root.markRead(root.messages)
       }
@@ -198,20 +238,20 @@ BarWidget {
       return
     }
     if (cmd === "bt_send_result") {
-      if (ev.success === true) {
-        root.sending = false
-        sendWatchdog.stop()
-        root.sendFailed = false
-        if (root.replyDraft === root.pendingBody) root.replyDraft = ""
-        if (root.composeBody === root.pendingBody) root.composeBody = ""
-        if (root.pendingBody)
-          root.messages = Model.setOutgoingFlags(root.messages, root.pendingBody, false, false)
-        root.pendingBody = ""
-        root.pendingThread = ""
-        root.sendCmd({ command: "bt_list_threads" })
-      } else {
-        root.failSend(ev.message || "The message was not sent.")
+      var item = null
+      if (ev.operation_id) {
+        // Results are broadcast to every client, and can arrive after timeout.
+        for (var si = 0; si < root.outbox.length; si++) {
+          if (root.outbox[si].handle === ev.operation_id) item = root.outbox[si]
+        }
+      } else if (root.activeSend && Model.sameThread(ev.thread, root.activeSend.thread)) {
+        // Compatibility with Tether versions predating operation IDs.
+        item = root.activeSend
       }
+      if (!item || item.queued || (!item.pending && !item.unconfirmed)) return
+      var uncertain = ev.success !== true && /may still|timed out/i.test(String(ev.message || ""))
+      root.finishSend(item, ev.success === true,
+                      ev.success === true ? "" : (ev.message || "The message was not sent."), uncertain)
       return
     }
     if (cmd === "bt_message_read") {
@@ -269,9 +309,8 @@ BarWidget {
       root.stashDraft(root.selectedThread.handle, root.replyDraft)
     root.page = "inbox"
     root.selectedThread = null
-    root.messages = []
+    root.serverMessages = []
     root.messagesLoading = false
-    root.sendFailed = false
     root.replyDraft = ""
     root.composeTo = ""
     root.composeBody = ""
@@ -306,9 +345,8 @@ BarWidget {
     root.stashDraft(root.selectedThread ? root.selectedThread.handle : "", root.replyDraft)
     root.page = "compose"
     root.selectedThread = null
-    root.messages = []
+    root.serverMessages = []
     root.messagesLoading = false
-    root.sendFailed = false
     root.replyDraft = ""
     root.composeTo = ""
     root.composeBody = ""
@@ -338,12 +376,11 @@ BarWidget {
     root.selectedThread = thread
     root.page = "thread"
     root.replyDraft = Model.getDraft(root.drafts, thread.handle)
-    root.actionNote = ""
-    root.sendFailed = false
+    root.setNote(root.failedSend ? root.failedSend.reason : "")
     root.readWatermarks = Model.markReadAt(root.readWatermarks, thread.handle, thread.timestamp)
     root.threads = Model.applyReadWatermarks(Model.zeroUnread(root.threads, thread.handle), root.readWatermarks)
     if (!same) {
-      root.messages = []
+      root.serverMessages = []
       root.messagesLoading = true
     }
     root.loadMessages(thread.handle)
@@ -352,7 +389,7 @@ BarWidget {
 
   function loadMessages(handle) {
     if (!handle) {
-      root.messages = []
+      root.serverMessages = []
       root.messagesLoading = false
       return
     }
@@ -407,7 +444,7 @@ BarWidget {
     root.sendCmd({ command: "bt_list_messages", thread: q[0] })
   }
 
-  function sendTo(handle, text) {
+  function sendTo(handle, text, retryHandle) {
     var h = Model.normalizeHandle(handle)
     var t = String(text || "").replace(/^\s+|\s+$/g, "")
     if (!h) {
@@ -422,25 +459,43 @@ BarWidget {
       root.setNote("Message is too long.")
       return false
     }
-    if (root.sending) {
-      root.setNote("Still sending the previous message.")
+    if (!root.socketUp || !root.mapUp) {
+      root.setNote("Messages are not connected.")
       return false
     }
-    if (!root.sendCmd({ command: "bt_send_message", thread: h, body: t })) {
-      root.setNote("Tether is not running.")
-      return false
+    // Keep unresolved messages; trim only older confirmed optimistic bubbles.
+    var retained = retryHandle ? Model.removeOutgoing(root.outbox, retryHandle) : root.outbox.slice()
+    while (retained.length >= Model.MAX_MESSAGES) {
+      var removable = -1
+      for (var ri = 0; ri < retained.length; ri++) {
+        if (!retained[ri].pending && !retained[ri].failed && !retained[ri].unconfirmed) {
+          removable = ri
+          break
+        }
+      }
+      if (removable < 0) {
+        root.setNote("The send queue is full. Wait for a message to finish.")
+        return false
+      }
+      retained.splice(removable, 1)
     }
     var now = Date.now() / 1000
-    root.pendingBody = t
-    root.pendingThread = h
-    root.sending = true
-    root.sendFailed = false
+    root.sendSerial += 1
+    var id = root.sendSession + "-" + String(root.sendSerial)
+    root.outbox = Model.appendOutgoing(retained, h, t, now, id, true)
+    var item = root.outbox[root.outbox.length - 1]
+    root.sendQueue = root.sendQueue.concat([item])
     root.actionNote = ""
-    if (root.selectedThread && Model.sameThread(root.selectedThread.handle, h))
-      root.messages = Model.appendOutgoing(root.messages, root.selectedThread.handle, t, now)
+    if (root.selectedThread && Model.sameThread(root.selectedThread.handle, h)
+        && root.replyDraft.replace(/^\s+|\s+$/g, "") === t) {
+      root.replyDraft = ""
+      root.stashDraft(h, "")
+    } else if (Model.getDraft(root.drafts, h).replace(/^\s+|\s+$/g, "") === t) {
+      root.stashDraft(h, "")
+    }
     root.threads = Model.patchThread(root.threads, h, t, now)
     root.readWatermarks = Model.markReadAt(root.readWatermarks, h, now)
-    sendWatchdog.restart()
+    root.pumpSendQueue()
     return true
   }
 
@@ -470,15 +525,14 @@ BarWidget {
         replyReason: ""
       })
     }
-    root.messages = Model.appendOutgoing(root.messages, h, root.pendingBody, Date.now() / 1000)
     root.messagesLoading = root.messages.length === 0
-    root.threads = Model.patchThread(root.threads, h, root.pendingBody, Date.now() / 1000)
+    root.composeBody = ""
     return true
   }
 
   function retrySend() {
-    if (root.page === "compose") return root.sendNew()
-    return root.sendReply()
+    var item = root.failedSend
+    return item ? root.sendTo(item.thread, item.body, item.handle) : false
   }
 
   function searchContacts(q) {
@@ -633,7 +687,7 @@ BarWidget {
     id: sendWatchdog
     interval: 60000
     repeat: false
-    onTriggered: root.failSend("Send timed out.")
+    onTriggered: root.unconfirmSend("No send result from Tether; the message may already have been sent.")
   }
 
   Component {

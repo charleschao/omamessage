@@ -2,6 +2,7 @@
 
 test:
 	node scripts/test-model.js
+	node scripts/test-sending.js
 
 validate: test
 	omarchy plugin validate .

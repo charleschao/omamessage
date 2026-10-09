@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.5.4] — 2026-10-09
+
+- Send stays available while earlier messages finish; new messages queue in order and remain visible across conversation changes. Send results are matched by operation ID, and missing results release the queue without automatically retrying a possibly delivered message.
+- Messages has a **Read all** button beside **New** to mark every conversation read.
+
 ## [0.5.3] — 2026-09-14
 
 - Mark-read requests now use Tether's one-message `handle` protocol, so opening a conversation and **Mark all read** update the iPhone correctly.

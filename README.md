@@ -74,7 +74,8 @@ It does **not** stop or uninstall Tether. `tetherd`, `tether-gtk`, pairing, and 
 
 - Searchable conversation list with unread badges and relative times
 - New messages with iPhone contact typeahead, plus replies from any thread
-- Reliable sending with a visible Sending state, Retry, and draft restoration on failure
+- Keep sending while earlier messages finish: an ordered queue with Queued / Sending status on each bubble, Retry and draft restoration for rejected messages
+- Missing send results show **Send unconfirmed**; the queue continues without automatically resending a message that may already be on the iPhone. Queued messages wait through a connection loss while the shell stays running.
 - Thread transcript with day headings, grouped bubbles, and group-chat sender names
 - Links open in the browser; copy a bubble by right-clicking or holding it
 - Detected one-time codes show a clickable **Copy XXXXX code** action
@@ -127,6 +128,7 @@ Shortcuts apply while the popout is focused and you are not typing in Search, To
 | Click another non-Messages notification | Copy its text |
 | Click the X on a notification | Dismiss it on the iPhone |
 | Click **Clear all** in Notifications | Dismiss all notifications that Tether permits this widget to dismiss |
+| Click **Read all** in Messages | Mark all conversations read, including those hidden by search |
 
 ## Limits
 

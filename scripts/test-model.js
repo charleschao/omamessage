@@ -230,7 +230,7 @@ ok("append local handle", String(local[1].handle).indexOf("local-") === 0)
 
 const server = [
   { handle: "a", body: "hi", mine: false, timestamp: 1, read: true },
-  { handle: "map-9", body: "on my way", mine: true, timestamp: 2, read: true }
+  { handle: "map-9", body: "on my way", mine: true, timestamp: 1700000001, read: true }
 ]
 eq("merge drops echo", M.mergeMessages(server, local, "tel:+15555550123").length, 2)
 eq("merge keeps pending", M.mergeMessages(server.slice(0, 1), local, "tel:+15555550123").length, 2)
@@ -238,6 +238,23 @@ eq("drop local", M.dropLocalOutgoing(local, "on my way").length, 1)
 eq("append pending", local[1].pending, true)
 eq("flags sent", M.setOutgoingFlags(local, "on my way", false, false)[1].pending, false)
 eq("flags failed", M.setOutgoingFlags(local, "on my way", false, true)[1].failed, true)
+
+const repeated = M.appendOutgoing(local, "tel:+15555550123", "on my way", 1700000001, "local-next", true)
+eq("merge keeps identical queued message", M.mergeMessages(server, repeated, "tel:+15555550123").length, 3)
+const activeRepeat = M.updateOutgoing(repeated, "local-next", { queued: false })
+eq("merge consumes each echo only once", M.mergeMessages(server, activeRepeat, "tel:+15555550123").length, 3)
+eq("merge ignores old identical body", M.mergeMessages([
+  { handle: "old", body: "on my way", mine: true, timestamp: 1699999999 }
+], local, "tel:+15555550123").length, 2)
+const failedRepeat = M.updateOutgoing(repeated, "local-next", { pending: false, queued: false, failed: true })
+eq("failure targets ID, not body", failedRepeat[1].pending, true)
+eq("failure keeps queued sibling distinct", failedRepeat[2].failed, true)
+eq("merge preserves failed bubble", M.mergeMessages(server, failedRepeat, "tel:+15555550123").length, 3)
+eq("remove targets ID", M.removeOutgoing(repeated, "local-next").length, 2)
+eq("queued stamp", M.decorateTranscript([repeated[2]], 1700000001)[1].stamp, "Queued")
+eq("unconfirmed stamp", M.decorateTranscript(M.updateOutgoing([repeated[2]], "local-next", {
+  queued: false, pending: false, unconfirmed: true
+}), 1700000001)[1].stamp, "Send unconfirmed")
 
 const patched = M.patchThread(threads, "tel:+15551212", "on my way", 1700000999)
 eq("patch preview", patched[0].preview, "on my way")

@@ -823,7 +823,9 @@ function decorateTranscript(messages, nowEpoch, isGroup) {
     var name = field(m.name, MAX_NAME)
     var showName = !m.mine && !!isGroup && !!name && (!grouped || name !== lastName)
     var stampText = ""
-    if (m.pending) stampText = "Sending…"
+    if (m.queued) stampText = "Queued"
+    else if (m.pending) stampText = "Sending…"
+    else if (m.unconfirmed) stampText = "Send unconfirmed"
     else if (m.failed) stampText = "Not sent"
     else if (!grouped) stampText = formatStamp(stamp)
     out.push({
@@ -892,7 +894,7 @@ function isLocalHandle(handle) {
   return String(handle || "").indexOf(LOCAL_HANDLE_PREFIX) === 0
 }
 
-function appendOutgoing(messages, thread, body, nowEpoch) {
+function appendOutgoing(messages, thread, body, nowEpoch, handle, queued) {
   var list = messages || []
   var out = []
   var n = Math.min(list.length, MAX_MESSAGES - 1)
@@ -904,7 +906,7 @@ function appendOutgoing(messages, thread, body, nowEpoch) {
   var stamp = epochOf(nowEpoch)
   if (!stamp) stamp = Math.floor(Date.now() / 1000)
   out.push({
-    handle: LOCAL_HANDLE_PREFIX + String(stamp) + "-" + String(out.length),
+    handle: handle || LOCAL_HANDLE_PREFIX + String(stamp) + "-" + String(out.length),
     thread: String(thread || ""),
     address: "",
     name: "",
@@ -913,7 +915,9 @@ function appendOutgoing(messages, thread, body, nowEpoch) {
     mine: true,
     read: true,
     pending: true,
+    queued: queued === true,
     failed: false,
+    unconfirmed: false,
     otp: extractOtp(text)
   })
   return out
@@ -922,24 +926,61 @@ function appendOutgoing(messages, thread, body, nowEpoch) {
 function mergeMessages(server, local, thread) {
   var rows = server || []
   var out = []
-  var seen = emptyDict()
+  var used = emptyDict()
   var n = Math.min(rows.length, MAX_MESSAGES)
   var i
   for (i = 0; i < n; i++) {
-    if (!rows[i]) continue
-    out.push(rows[i])
-    if (rows[i].mine) seen[collapseWs(rows[i].body)] = true
+    if (rows[i]) out.push(rows[i])
   }
   var extras = local || []
   var k = Math.min(extras.length, MAX_MESSAGES)
-  for (i = 0; i < k && out.length < MAX_MESSAGES; i++) {
+  for (i = 0; i < k; i++) {
     var m = extras[i]
     if (!m || !m.mine || !isLocalHandle(m.handle)) continue
     if (thread && m.thread && !sameThread(m.thread, thread)) continue
-    var body = collapseWs(m.body)
-    if (!body || seen[body]) continue
-    seen[body] = true
-    out.push(m)
+    // Match each echo once. Old identical texts, queued messages and failures
+    // must not swallow a new optimistic bubble (e.g. sending "OK" twice).
+    var echo = -1
+    if (!m.queued && !m.failed) {
+      for (var j = 0; j < n; j++) {
+        var row = rows[j]
+        if (used[j] || !row || !row.mine) continue
+        if (row.thread && m.thread && !sameThread(row.thread, m.thread)) continue
+        if (collapseWs(row.body) !== collapseWs(m.body)) continue
+        if (epochOf(row.timestamp) < epochOf(m.timestamp)) continue
+        echo = j
+        break
+      }
+    }
+    if (echo >= 0) used[echo] = true
+    else out.push(m)
+  }
+  return out.slice(-MAX_MESSAGES)
+}
+
+function updateOutgoing(messages, handle, flags) {
+  var list = messages || []
+  var out = []
+  for (var i = 0; i < list.length; i++) {
+    var row = list[i]
+    if (row.handle !== handle) {
+      out.push(row)
+      continue
+    }
+    var next = {}
+    var key
+    for (key in row) next[key] = row[key]
+    for (key in flags) next[key] = flags[key]
+    out.push(next)
+  }
+  return out
+}
+
+function removeOutgoing(messages, handle) {
+  var list = messages || []
+  var out = []
+  for (var i = 0; i < list.length; i++) {
+    if (list[i].handle !== handle) out.push(list[i])
   }
   return out
 }
