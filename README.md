@@ -77,13 +77,15 @@ It does **not** stop or uninstall Tether. `tetherd`, `tether-gtk`, pairing, and 
 - Keep sending while earlier messages finish: an ordered queue with Queued / Sending status on each bubble, Retry and draft restoration for rejected messages
 - Missing send results show **Send unconfirmed**; the queue continues without automatically resending a message that may already be on the iPhone. Queued messages wait through a connection loss while the shell stays running.
 - Thread transcript with day headings, grouped bubbles, and group-chat sender names
-- Links open in the browser; copy a bubble by right-clicking or holding it
-- Detected one-time codes show a clickable **Copy XXXXX code** action
+- Every bubble has a visible **Copy text** button; highlight part of a message to use **Copy selection** or `Ctrl+C`
+- Links open in the browser; right-clicking a bubble also copies the whole message
+- Detected one-time codes keep a separate **Copy XXXXX** action
 - First-run empty state with **Open Tether** and **Ask iPhone**
 
 ### Notifications
 
 - Tether’s ANCS mirror in a second tab
+- Full, selectable notification text with **Copy text** and **Copy selection** buttons
 - Dismiss notifications on the iPhone or copy detected one-time codes
 - Messages notices open the SMS thread; other notices copy their text
 
@@ -96,7 +98,7 @@ Pairing, Bluetooth, clipboard sync, file transfer, retention, OTP vault, and des
 
 ## Keyboard
 
-Shortcuts apply while the popout is focused and you are not typing in Search, To, or Message.
+Shortcuts apply while the popout is focused and you are not typing in Search, To, or Message, or selecting message or notification text.
 
 | Key | Action |
 | --- | --- |
@@ -111,7 +113,7 @@ Shortcuts apply while the popout is focused and you are not typing in Search, To
 | Tab | Next Omarchy bar popout |
 | Esc in Search | Clear the query, then unfocus (does not close the pane) |
 
-**New** is the button on the Messages tab (not `n`). `Ctrl+A` in a text field still selects all in that field.
+**New** is the button on the Messages tab (not `n`). `Ctrl+A` in a text field or selectable message/notification selects its text. `Esc` leaves text selection before navigating back.
 
 ## Mouse
 
@@ -122,9 +124,12 @@ Shortcuts apply while the popout is focused and you are not typing in Search, To
 | Middle-click the bar icon | Open `tether-gtk` |
 | Click ← | Back to the list |
 | Click a https link in a bubble | Open it |
-| Drag across a bubble, then `Ctrl+C` | Copy selected text (or use `Ctrl+A`, then `Ctrl+C` for the whole message) |
+| Click **Copy text** under a message or notification | Copy its whole text; the button briefly shows **Copied** |
+| Drag across message or notification text | Highlight specific text; the button becomes **Copy selection** |
+| Click **Copy selection** or press `Ctrl+C` | Copy only the highlighted text |
+| Click **Copy XXXXX** | Copy just the detected one-time code |
 | Right-click or hold a bubble | Copy the whole message |
-| Click a notification with a complete HTTPS link | Open that exact web destination (Discord, Telegram, and X links included) |
+| Click **Open** or the header of a notification with a complete HTTPS link | Open that exact web destination (Discord, Telegram, and X links included) |
 | Click another non-Messages notification | Copy its text |
 | Click the X on a notification | Dismiss it on the iPhone |
 | Click **Clear all** in Notifications | Dismiss all notifications that Tether permits this widget to dismiss |

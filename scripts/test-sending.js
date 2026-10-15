@@ -26,7 +26,8 @@ function widget() {
     serverMessages: [], selectedThread: alice, threads: [alice, bob],
     replyDraft: "", composeBody: "", composeTo: "", page: "thread", tab: "messages",
     drafts: Model.emptyDict(), readWatermarks: Model.emptyDict(), markedRead: Model.emptyDict(),
-    markAllQueue: [], actionNote: "", messagesLoading: false,
+    markAllQueue: [], actionNote: "", messagesLoading: false, opened: true,
+    contactQuery: "", contacts: [],
     sendCmd(command) { sent.push(command); return root.socketUp }
   }
   Object.defineProperties(root, {
@@ -36,13 +37,15 @@ function widget() {
     failedSend: { get: () => [...root.outbox].reverse().find(row => row.failed && root.selectedThread
       && Model.sameThread(row.thread, root.selectedThread.handle)) || null }
   })
-  const ctx = vm.createContext({ root, Model, sendWatchdog: timer, panelLoader: { item: null } })
+  const ctx = vm.createContext({ root, Model, sendWatchdog: timer, panelLoader: { item: null },
+    contactTimer: { restart() {} } })
   for (const [source, name] of functions) {
     if (name === "sendCmd") continue
     vm.runInContext(source, ctx)
     root[name] = ctx[name]
   }
   root.sentMessages = () => sent.filter(command => command.command === "bt_send_message")
+  root.commands = sent
   root.result = (item, success = true, extra = {}) => root.handleLine(JSON.stringify({
     command: "bt_send_result", thread: item.thread, operation_id: item.handle, success, ...extra
   }))
@@ -192,4 +195,168 @@ function widget() {
   assert.equal(w.sendQueue.at(-1).body, "message 0")
 }
 
-console.log("sending ok")
+{
+  const w = widget()
+  w.replyDraft = "still typing my reply"
+  w.serverMessages = Model.parseMessages({ messages: [
+    { handle: "old", thread: alice.handle, body: "earlier", read: true }
+  ] })
+  // A missed push must recover while the same conversation remains open.
+  w.refreshConversation()
+  assert.equal(w.commands.length, 1)
+  assert.equal(w.commands[0].command, "bt_list_messages")
+  assert.equal(w.commands[0].thread, alice.handle)
+  w.handleLine(JSON.stringify({ command: "bt_messages", thread: alice.handle, messages: [
+    { handle: "old", thread: alice.handle, body: "earlier", read: true },
+    { handle: "new", thread: alice.handle, body: "new reply", read: false }
+  ] }))
+  assert.deepEqual(Array.from(w.messages, row => row.body), ["earlier", "new reply"])
+  assert.equal(w.page, "thread")
+  assert.equal(w.replyDraft, "still typing my reply")
+  assert(w.commands.some(command => command.command === "bt_mark_read" && command.handle === "new"))
+  const previousMessages = w.serverMessages
+  w.handleLine(JSON.stringify({ command: "bt_messages", thread: alice.handle, messages: [
+    { handle: "old", thread: alice.handle, body: "earlier", read: true },
+    { handle: "new", thread: alice.handle, body: "new reply", read: false }
+  ] }))
+  assert.equal(w.serverMessages, previousMessages) // no reset for unchanged polls
+  w.handleLine(JSON.stringify({ command: "bt_messages", thread: bob.handle,
+    messages: [{ handle: "other", thread: bob.handle, body: "for Bob" }] }))
+  assert.equal(w.messages.at(-1).body, "new reply")
+}
+
+{
+  const w = widget()
+  // Existing push refresh supports aliases and preserves current typing.
+  w.replyDraft = "draft"
+  w.handleLine(JSON.stringify({ command: "bt_message", thread: "tel:5555550123" }))
+  assert(w.commands.some(command => command.command === "bt_list_messages" && command.thread === "tel:5555550123"))
+  assert.equal(w.replyDraft, "draft")
+  w.commands.length = 0
+  w.handleLine(JSON.stringify({ command: "bt_message", thread: bob.handle }))
+  assert.equal(w.commands.some(command => command.command === "bt_list_messages"), false)
+}
+
+for (const state of [{ opened: false }, { socketUp: false }, { status: { map: false } },
+  { page: "inbox" }, { selectedThread: null }]) {
+  const w = widget()
+  Object.assign(w, state)
+  w.refreshConversation()
+  assert.equal(w.commands.length, 0)
+}
+
+{
+  const w = widget()
+  w.replyDraft = "keep on reconnect"
+  w.onSocketUp()
+  assert(w.commands.some(command => command.command === "bt_list_messages" && command.thread === alice.handle))
+  assert.equal(w.replyDraft, "keep on reconnect")
+}
+
+const auditTests = {
+  "hidden conversation does not mark new messages read"() {
+    const w = widget()
+    w.opened = false
+    w.handleLine(JSON.stringify({ command: "bt_messages", thread: alice.handle,
+      messages: [{ handle: "unseen", thread: alice.handle, body: "new", read: false }] }))
+    assert.equal(w.commands.some(command => command.command === "bt_mark_read"), false)
+  },
+  "mark-all ignores unrelated message responses"() {
+    const w = widget()
+    w.opened = false
+    w.markAllQueue = [alice.handle]
+    w.handleLine(JSON.stringify({ command: "bt_messages", thread: bob.handle,
+      messages: [{ handle: "unrelated", thread: bob.handle, body: "new", read: false }] }))
+    assert.equal(w.commands.some(command => command.command === "bt_mark_read"), false)
+    assert.equal(w.markAllQueue[0], alice.handle)
+  },
+  "contact selection preserves a new-message draft"() {
+    for (const recipient of [alice, { handle: "tel:+15555550777", name: "New contact" }]) {
+      const w = widget()
+      w.page = "compose"
+      w.selectedThread = null
+      w.composeBody = "already typed this"
+      w.openContactHandle({ name: recipient.name }, recipient.handle)
+      assert.equal(w.replyDraft, "already typed this")
+      assert.equal(w.selectedThread.handle, recipient.handle)
+      assert.equal(w.composeBody, "")
+      assert.equal(w.sentMessages().length, 0)
+    }
+  },
+  "disconnect clears stale connection and calls"() {
+    const w = widget()
+    w.calls = [{ ringing: true }]
+    w.markedRead = { old: true }
+    w.socketUp = false
+    w.onSocketDown()
+    assert.equal(w.mapUp, false)
+    assert.equal(w.calls.length, 0)
+    assert.equal(Object.keys(w.markedRead).length, 0)
+  },
+  "reconnect resumes interrupted mark-all"() {
+    const w = widget()
+    w.opened = false
+    w.markAllQueue = [bob.handle]
+    w.onSocketUp()
+    assert(w.commands.some(command => command.command === "bt_list_messages" && command.thread === bob.handle))
+  },
+  "failed mark-read can be retried"() {
+    const w = widget()
+    const messages = Model.parseMessages({ messages: [{ handle: "retry-read", read: false }] })
+    w.markRead(messages)
+    w.handleLine(JSON.stringify({ command: "bt_message_read", handles: ["retry-read"], success: false }))
+    w.markRead(messages)
+    assert.equal(w.commands.filter(command => command.command === "bt_mark_read").length, 2)
+  },
+  "contact search ignores outdated responses"() {
+    const w = widget()
+    w.page = "compose"
+    w.contacts = [{ name: "old suggestion" }]
+    w.searchContacts("Bob")
+    assert.equal(w.contacts.length, 0)
+    w.handleLine(JSON.stringify({ command: "bt_contacts", query: "Alice",
+      contacts: [{ name: "Alice", addresses: [alice.handle] }] }))
+    assert.equal(w.contacts.length, 0)
+    w.handleLine(JSON.stringify({ command: "bt_contacts", query: "Bob",
+      contacts: [{ name: "Bob", addresses: [bob.handle] }] }))
+    assert.equal(w.contacts[0].name, "Bob")
+    w.backToList()
+    w.loadContacts()
+    assert.equal(w.commands.some(command => command.command === "bt_list_contacts"), false)
+  },
+  "mark-all survives a full disconnect and fresh connection status"() {
+    const w = widget()
+    w.opened = false
+    w.markAllQueue = [bob.handle]
+    w.socketUp = false
+    w.onSocketDown()
+    w.socketUp = true
+    w.onSocketUp()
+    assert.equal(w.commands.some(command => command.command === "bt_list_messages"), false)
+    w.handleLine(JSON.stringify({ command: "bt_connection_changed", map_open: true }))
+    assert(w.commands.some(command => command.command === "bt_list_messages" && command.thread === bob.handle))
+    w.handleLine(JSON.stringify({ command: "bt_messages", thread: bob.handle,
+      messages: [{ handle: "bob-read", read: false }] }))
+    assert.equal(w.markAllQueue.length, 0)
+    assert(w.commands.some(command => command.command === "bt_mark_read" && command.handle === "bob-read"))
+  },
+  "mixed-case email receives canonical message responses"() {
+    const w = widget()
+    w.selectedThread = { handle: "email:Alice@Example.COM", name: "Alice", repliable: true }
+    w.replyDraft = "email draft"
+    w.handleLine(JSON.stringify({ command: "bt_messages", thread: "email:alice@example.com",
+      messages: [{ handle: "mail-reply", body: "email reply", read: true }] }))
+    assert.equal(w.selectedThread.handle, "email:alice@example.com")
+    assert.equal(w.messages[0].body, "email reply")
+    assert.equal(w.replyDraft, "email draft")
+  }
+}
+let auditFailures = 0
+for (const [name, test] of Object.entries(auditTests)) {
+  try { test() } catch (error) {
+    auditFailures++
+    console.error(`FAIL: ${name}: ${error.message}`)
+  }
+}
+assert.equal(auditFailures, 0, "audit regressions")
+console.log("sending and conversation refresh ok")

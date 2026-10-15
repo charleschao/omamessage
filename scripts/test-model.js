@@ -285,6 +285,27 @@ const mergedName = M.mergeSelectedThread(
 eq("adopt contact name", mergedName.name, "Ada")
 eq("adopt canonical handle", mergedName.handle, "tel:+15555550123")
 
+eq("non-message notification cannot route to SMS by name", M.threadForNotice(threads,
+  { title: "Ada", messages: false }), null)
+eq("non-message notification cannot route to SMS by number", M.threadForNotice(threads,
+  { title: "+15551212", messages: false }), null)
+eq("recipient name with digits is not a phone", M.normalizeHandle("Alice 2"), "")
+eq("empty telephone recipient is invalid", M.normalizeHandle("tel:"), "")
+eq("invalid email does not become telephone", M.normalizeHandle("email:123"), "")
+eq("telephone prefix does not become email", M.normalizeHandle("tel:person@example.com"), "")
+eq("mailto recipient", M.normalizeHandle("mailto:person@example.com"), "email:person@example.com")
+eq("email recipient follows daemon canonical spelling", M.normalizeHandle("Person@Example.COM"), "email:person@example.com")
+eq("canonical email response matches open thread", M.sameThread("email:Person@Example.COM", "email:person@example.com"), true)
+eq("overlong recipient is rejected", M.normalizeHandle("a".repeat(M.MAX_HANDLE) + "@test.com"), "")
+eq("formatted telephone recipient", M.normalizeHandle("tel:+1 (555) 555-0123"), "tel:+15555550123")
+
+const oldLocal = M.updateOutgoing(M.appendOutgoing([], "tel:+15555550123", "earlier send",
+  1700000000, "local-old", false), "local-old", { pending: false })
+const laterIncoming = [{ handle: "map-new", thread: "tel:+15555550123", body: "later reply",
+  mine: false, timestamp: 1700000010 }]
+eq("outgoing stays in chronological order", M.mergeMessages(laterIncoming, oldLocal,
+  "tel:+15555550123").map(row => row.body), ["earlier send", "later reply"])
+
 if (failed) {
   console.error(failed + " failed")
   process.exit(1)

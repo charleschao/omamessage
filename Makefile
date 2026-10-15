@@ -3,6 +3,7 @@
 test:
 	node scripts/test-model.js
 	node scripts/test-sending.js
+	node scripts/test-panel.js
 
 validate: test
 	omarchy plugin validate .

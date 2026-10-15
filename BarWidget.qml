@@ -103,6 +103,15 @@ BarWidget {
     root.sendCmd({ command: "bt_list_threads" })
     root.sendCmd({ command: "bt_list_calls" })
     root.sendCmd({ command: "bt_list_notifications" })
+    root.refreshConversation()
+  }
+
+  function refreshConversation() {
+    // Read the daemon's cache while replying, even if a push was missed during
+    // a reconnect. Do not reopen the thread: that would restore an older draft.
+    if (!root.opened || !root.socketUp || !root.mapUp
+        || root.page !== "thread" || !root.selectedThread) return
+    root.loadMessages(root.selectedThread.handle)
   }
 
   function onSocketUp() {
@@ -110,11 +119,16 @@ BarWidget {
     root.reconnectAttempt = 0
     root.sendCmd({ command: "subscribe" })
     root.pullState()
+    if (root.mapUp) root.pumpMarkAll()
   }
 
   function onSocketDown() {
     root.daemonOk = false
     root.sockBuf = ""
+    root.status = Model.parseConnection({})
+    root.calls = []
+    root.markedRead = Model.emptyDict()
+    root.readWatermarks = Model.emptyDict()
     root.unconfirmSend("Connection lost; the message may already have been sent.")
   }
 
@@ -170,9 +184,11 @@ BarWidget {
     if (!ev) return
     var cmd = ev.command
     if (cmd === "bt_connection_changed") {
+      var wasMapUp = root.mapUp
       root.daemonOk = true
       root.status = Model.parseConnection(ev)
       root.pumpSendQueue()
+      if (root.mapUp && !wasMapUp) root.pumpMarkAll()
       return
     }
     if (cmd === "bt_threads") {
@@ -187,14 +203,18 @@ BarWidget {
       var key = String(ev.thread || "")
       var msgs = Model.parseMessages(ev)
       var queue = root.markAllQueue || []
-      if (queue.length) root.markRead(msgs)
+      var markingAll = queue.length && Model.sameThread(queue[0], key)
+      if (markingAll) root.markRead(msgs)
       if (root.selectedThread && Model.sameThread(root.selectedThread.handle, key)) {
         root.adoptThreadKey(key)
-        root.serverMessages = msgs
+        // Polling an unchanged cache must not recreate selectable bubbles or
+        // disturb the scroll position while the user reads earlier messages.
+        if (JSON.stringify(root.serverMessages) !== JSON.stringify(msgs))
+          root.serverMessages = msgs
         root.messagesLoading = false
-        if (!queue.length) root.markRead(root.messages)
+        if (!markingAll && root.opened && root.page === "thread") root.markRead(root.messages)
       }
-      if (queue.length && Model.sameThread(queue[0], key)) {
+      if (markingAll) {
         var rest = []
         var i
         for (i = 1; i < queue.length; i++) rest.push(queue[i])
@@ -204,7 +224,9 @@ BarWidget {
       return
     }
     if (cmd === "bt_contacts") {
-      root.contacts = Model.parseContacts(ev)
+      // A slow answer for an earlier query must not replace newer suggestions.
+      if (root.page === "compose" && (ev.query == null || String(ev.query) === root.contactQuery))
+        root.contacts = Model.parseContacts(ev)
       return
     }
     if (cmd === "bt_devices") {
@@ -231,7 +253,8 @@ BarWidget {
     }
     if (cmd === "bt_message") {
       root.sendCmd({ command: "bt_list_threads" })
-      if (root.selectedThread && Model.sameThread(ev.thread, root.selectedThread.handle)) {
+      if (root.opened && root.page === "thread" && root.selectedThread
+          && Model.sameThread(ev.thread, root.selectedThread.handle)) {
         root.adoptThreadKey(ev.thread)
         root.loadMessages(root.selectedThread.handle)
       }
@@ -255,6 +278,17 @@ BarWidget {
       return
     }
     if (cmd === "bt_message_read") {
+      // Failed requests must not remain permanently suppressed as already sent.
+      if (ev.success === false) {
+        var failedHandles = Model.asArray(ev.handles)
+        if (!failedHandles.length && ev.handle) failedHandles = [ev.handle]
+        var seen = Model.emptyDict()
+        for (var mk in root.markedRead) {
+          if (failedHandles.indexOf(mk) < 0) seen[mk] = root.markedRead[mk]
+        }
+        root.markedRead = seen
+        root.readWatermarks = Model.emptyDict()
+      }
       root.sendCmd({ command: "bt_list_threads" })
       return
     }
@@ -538,11 +572,13 @@ BarWidget {
   function searchContacts(q) {
     var s = String(q || "")
     if (s.length > Model.MAX_NAME) s = s.slice(0, Model.MAX_NAME)
+    if (s !== root.contactQuery) root.contacts = []
     root.contactQuery = s
     contactTimer.restart()
   }
 
   function loadContacts() {
+    if (root.page !== "compose") return
     root.sendCmd({ command: "bt_list_contacts", query: root.contactQuery })
   }
 
@@ -552,13 +588,9 @@ BarWidget {
       root.setNote("No phone or email for that contact.")
       return
     }
+    var body = root.page === "compose" ? root.composeBody : ""
     var match = Model.threadByHandle(root.threads, h)
-    if (match) {
-      root.openThread(match)
-      return
-    }
-    root.composeTo = h
-    root.openThread({
+    root.openThread(match || {
       handle: h,
       name: (c && c.name) || h,
       address: h,
@@ -570,6 +602,9 @@ BarWidget {
       repliable: true,
       replyReason: ""
     })
+    if (body) root.replyDraft = body
+    root.composeTo = ""
+    root.composeBody = ""
   }
 
   function solicit() {
@@ -656,7 +691,8 @@ BarWidget {
 
   function copyText(text) {
     var t = String(text || "")
-    if (!t || t.length > Model.MAX_BODY) return
+    // A notification can include a title and subtitle as well as its body.
+    if (!t || t.length > Model.MAX_BODY + Model.MAX_NAME + Model.MAX_PREVIEW + 2) return false
     root.pendingCopy = t
     clipWatchdog.stop()
     clipKill.stop()
@@ -664,6 +700,7 @@ BarWidget {
     clipProc.stdinEnabled = true
     clipProc.running = true
     root.setNote("Copied.")
+    return true
   }
 
   implicitWidth: button.implicitWidth
@@ -710,6 +747,15 @@ BarWidget {
     id: socketLoader
     active: false
     sourceComponent: socketComponent
+  }
+
+  Timer {
+    id: conversationTimer
+    interval: 2000
+    repeat: true
+    running: root.opened && root.socketUp && root.mapUp
+      && root.page === "thread" && !!root.selectedThread
+    onTriggered: root.refreshConversation()
   }
 
   Timer {

@@ -433,11 +433,9 @@ function noticeCount(notifications) {
 }
 
 function threadForNotice(threads, notice) {
-  if (!notice) return null
-  if (notice.messages) {
-    var byHandle = threadByHandle(threads, notice.title)
-    if (byHandle) return byHandle
-  }
+  if (!notice || notice.messages !== true) return null
+  var byHandle = threadByHandle(threads, notice.title)
+  if (byHandle) return byHandle
   var title = fold(notice.title).replace(/^\s+|\s+$/g, "")
   if (!title) return null
   var list = threads || []
@@ -854,14 +852,18 @@ function decorateTranscript(messages, nowEpoch, isGroup) {
 
 function normalizeHandle(value) {
   var h = String(value || "").replace(/^\s+|\s+$/g, "")
-  if (!h) return ""
-  if (h.indexOf("tel:") === 0 || h.indexOf("email:") === 0 || h.indexOf("group:") === 0)
-    return field(h, MAX_HANDLE)
-  if (h.indexOf("mailto:") === 0) return field("email:" + h.slice(7), MAX_HANDLE)
-  if (h.indexOf("@") >= 0) return field("email:" + h, MAX_HANDLE)
+  // Reject invalid or overlong routes instead of silently changing a recipient.
+  if (!h || h.length > MAX_HANDLE) return ""
+  if (h.indexOf("group:") === 0) return h.length > 6 ? h : ""
+  if (/^(mailto|email):/i.test(h) || (h.indexOf("@") >= 0 && !/^tel:/i.test(h))) {
+    h = h.replace(/^(mailto|email):/i, "")
+    return /^[^\s@:<>]+@[^\s@:<>]+$/.test(h) && h.length + 6 <= MAX_HANDLE ? "email:" + h.toLowerCase() : ""
+  }
+  h = h.replace(/^tel:/i, "")
+  if (!/^\+?[\d().\s-]+$/.test(h)) return ""
   var digits = h.replace(/[^\d+]/g, "")
-  if (!digits) return ""
-  return field("tel:" + digits, MAX_HANDLE)
+  if (!/\d/.test(digits) || digits.length + 4 > MAX_HANDLE) return ""
+  return "tel:" + digits
 }
 
 function telSuffix(raw) {
@@ -872,6 +874,7 @@ function telSuffix(raw) {
 
 function threadBucket(key) {
   var h = String(key || "")
+  if (h.slice(0, 6).toLowerCase() === "email:") return "email:" + h.slice(6).toLowerCase()
   if (h.indexOf("tel:") !== 0) return h
   var suffix = telSuffix(h.slice(4))
   if (!suffix) suffix = h.slice(4).replace(/\D/g, "")
@@ -955,6 +958,7 @@ function mergeMessages(server, local, thread) {
     if (echo >= 0) used[echo] = true
     else out.push(m)
   }
+  out.sort(function(a, b) { return epochOf(a.timestamp) - epochOf(b.timestamp) })
   return out.slice(-MAX_MESSAGES)
 }
 

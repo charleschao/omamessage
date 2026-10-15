@@ -38,6 +38,69 @@ Panel {
   property string searchQuery: ""
   property int cursorIndex: 0
   property bool cursorActive: false
+  property Item focusedText: null
+  readonly property bool textFocused: !!root.focusedText && root.focusedText.activeFocus
+
+  component SelectableText: TextEdit {
+    id: selectable
+    readonly property string selectedPlainText: selectedText.replace(/[\u2028\u2029]/g, "\n")
+    readOnly: true
+    selectByMouse: true
+    selectByKeyboard: true
+    wrapMode: TextEdit.Wrap
+    textFormat: TextEdit.PlainText
+    color: root.fg
+    selectionColor: root.accent
+    selectedTextColor: Color.popups.background
+    font.family: root.fontFamily
+    font.pixelSize: Style.font.body
+    onActiveFocusChanged: {
+      if (activeFocus) root.focusedText = selectable
+      else if (root.focusedText === selectable) root.focusedText = null
+    }
+    Keys.onPressed: function(event) {
+      if (event.matches(StandardKey.Copy) && selectedText && hw) {
+        hw.copyText(selectedPlainText)
+        event.accepted = true
+      }
+    }
+    Keys.onEscapePressed: function(event) {
+      deselect()
+      keyCatcher.forceActiveFocus()
+      event.accepted = true
+    }
+    HoverHandler { cursorShape: Qt.IBeamCursor }
+  }
+
+  component CopyTextButton: Button {
+    id: copyButton
+    required property SelectableText textItem
+    required property string fullText
+    property bool copied: false
+    readonly property bool hasSelection: textItem.selectedText.length > 0
+    text: copied ? "Copied" : (hasSelection ? "Copy selection" : "Copy text")
+    tooltipText: "Drag over text to select a part, then copy"
+    bordered: true
+    foreground: root.fg
+    accent: root.accent
+    fontFamily: root.fontFamily
+    fontSize: Style.font.caption
+    Connections {
+      target: copyButton.textItem
+      function onSelectedTextChanged() { copyButton.copied = false }
+    }
+    onClicked: {
+      if (hw && hw.copyText(hasSelection ? textItem.selectedPlainText : fullText)) {
+        copied = true
+        copiedTimer.restart()
+      }
+    }
+    Timer {
+      id: copiedTimer
+      interval: 1500
+      onTriggered: copyButton.copied = false
+    }
+  }
 
   readonly property var visibleThreads: Model.filterThreads(root.threads, root.searchQuery)
   readonly property var visibleNotices: Model.filterNotifications(root.notifications, root.searchQuery)
@@ -93,6 +156,7 @@ Panel {
     return 0
   }
   readonly property int headerH: root.tabRowH + root.searchRowH
+  readonly property int copyHintH: root.noticesTab || root.page === "thread" ? Style.space(26) : 0
   readonly property int noteH: {
     if (root.actionNote === "") return 0
     if (root.page !== "thread" && root.page !== "compose" && !root.noticesTab) return 0
@@ -103,6 +167,7 @@ Panel {
     var h = root.panelBodyHeight - root.headerH - root.bannerH - Style.space(2)
     h -= root.composeH
     h -= root.noteH
+    h -= root.copyHintH
     if (h < Style.space(200)) h = Style.space(200)
     return h
   }
@@ -226,7 +291,7 @@ Panel {
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
-      blocked: searchField.activeFocus || replyField.activeFocus || toField.activeFocus || composeField.activeFocus
+      blocked: searchField.activeFocus || replyField.activeFocus || toField.activeFocus || composeField.activeFocus || root.textFocused
       onCloseRequested: {
         if (root.page !== "inbox" && hw) hw.backToList()
         else root.close()
@@ -256,8 +321,12 @@ Panel {
       onActivateRequested: root.openCursor()
       onDeleteRequested: root.dismissCursor()
       onTextKey: function(t) {
-        if (t === "/") {
+        if (t === "/" && root.inboxMode) {
           searchField.forceActiveFocus()
+          return
+        }
+        if (t === "b" && root.page !== "inbox" && hw) {
+          hw.backToList()
           return
         }
         if ((t === "n" || t === "N") && hw) {
@@ -268,7 +337,7 @@ Panel {
 
       Shortcut {
         sequence: "Ctrl+A"
-        enabled: root.opened && !searchField.activeFocus && !replyField.activeFocus && !toField.activeFocus && !composeField.activeFocus
+        enabled: root.opened && !keyCatcher.blocked
         onActivated: if (hw) hw.markAllRead()
       }
 
@@ -333,7 +402,7 @@ Panel {
 
         // Quiet status while the inbox is still usable
         Item {
-          visible: !root.mapUp && !root.showSetup && !root.ringingCall
+          visible: !root.mapUp && !root.showSetup && !root.ringingCall && !root.noticesTab
           width: parent.width
           height: visible ? Style.space(36) : 0
 
@@ -544,6 +613,19 @@ Panel {
 
         PanelSeparator { foreground: root.fg }
 
+        Text {
+          visible: root.copyHintH > 0
+          width: parent.width
+          height: root.copyHintH
+          leftPadding: Style.space(16)
+          verticalAlignment: Text.AlignVCenter
+          text: "Drag to select text · Ctrl+C to copy"
+          textFormat: Text.PlainText
+          color: root.muted
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+        }
+
         // Setup empty
         Item {
           visible: root.showSetup
@@ -745,6 +827,9 @@ Panel {
             width: noticeList.width
             height: noticeBody.implicitHeight + Style.space(16)
             readonly property bool current: index === root.cursorIndex
+            readonly property string noticeText: (modelData.primary || "")
+              + (modelData.secondary && modelData.secondary !== modelData.primary ? "\n" + modelData.secondary : "")
+            readonly property bool canOpen: !!modelData.webUrl || !!Model.threadForNotice(root.threads, modelData)
 
             HoverHandler {
               id: nHover
@@ -753,8 +838,8 @@ Panel {
 
             MouseArea {
               // Keep the row action above its visual background. The content
-              // stays above this area so the dismiss button retains its own
-              // click target.
+              // stays above this area so text selection and buttons retain
+              // their own click targets.
               z: 0
               anchors.fill: parent
               onClicked: {
@@ -826,36 +911,43 @@ Panel {
                 }
               }
 
-              Text {
+              SelectableText {
+                id: noticeTextBody
                 width: parent.width
-                textFormat: Text.PlainText
-                text: modelData.primary || ""
-                wrapMode: Text.NoWrap
-                elide: Text.ElideRight
-                color: root.fg
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.body
+                textFormat: TextEdit.RichText
+                text: Model.escapeHtml(modelData.primary || "").replace(/\n/g, "<br>")
+                  + (modelData.secondary ? "<br><span style=\"color:" + root.muted
+                    + ";font-size:" + Style.font.bodySmall + "px\">"
+                    + Model.escapeHtml(modelData.secondary).replace(/\n/g, "<br>") + "</span>" : "")
               }
-              Text {
-                visible: !!modelData.secondary
+              Flow {
                 width: parent.width
-                textFormat: Text.PlainText
-                text: modelData.secondary || ""
-                wrapMode: Text.NoWrap
-                elide: Text.ElideRight
-                color: root.muted
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.bodySmall
-              }
-              Button {
-                visible: !!modelData.otp
-                text: "Copy " + modelData.otp
-                bordered: true
-                foreground: root.fg
-                accent: root.accent
-                fontFamily: root.fontFamily
-                fontSize: Style.font.caption
-                onClicked: if (hw) hw.copyText(modelData.otp)
+                spacing: Style.space(6)
+                topPadding: Style.space(4)
+                CopyTextButton {
+                  textItem: noticeTextBody
+                  fullText: noticeRow.noticeText
+                }
+                Button {
+                  visible: !!modelData.otp
+                  text: "Copy " + modelData.otp
+                  bordered: true
+                  foreground: root.fg
+                  accent: root.accent
+                  fontFamily: root.fontFamily
+                  fontSize: Style.font.caption
+                  onClicked: if (hw) hw.copyText(modelData.otp)
+                }
+                Button {
+                  visible: noticeRow.canOpen
+                  text: "Open"
+                  bordered: true
+                  foreground: root.fg
+                  accent: root.accent
+                  fontFamily: root.fontFamily
+                  fontSize: Style.font.caption
+                  onClicked: if (hw) hw.activateNotice(modelData)
+                }
               }
             }
           }
@@ -928,8 +1020,20 @@ Panel {
           boundsBehavior: Flickable.StopAtBounds
           model: root.transcript
           property bool pinToEnd: true
+          function followLatest() {
+            if (!visible || !pinToEnd || count === 0) return
+            forceLayout()
+            positionViewAtEnd()
+          }
           onMovementEnded: pinToEnd = atYEnd
-          onCountChanged: if (pinToEnd && count > 0) positionViewAtEnd()
+          // JS-array model resets and wrapped bubble heights settle after the
+          // change signal. Follow after layout, including at the message cap
+          // where a new reply replaces an old row without changing the count.
+          onModelChanged: Qt.callLater(followLatest)
+          onCountChanged: Qt.callLater(followLatest)
+          onContentHeightChanged: Qt.callLater(followLatest)
+          onHeightChanged: Qt.callLater(followLatest)
+          onVisibleChanged: if (visible) Qt.callLater(followLatest)
 
           Text {
             visible: root.messagesLoading && root.messages.length === 0
@@ -980,6 +1084,7 @@ Panel {
 
               Rectangle {
                 id: bubble
+                anchors.right: modelData.mine ? parent.right : undefined
                 width: msgBody.width + Style.space(24)
                 implicitHeight: msgBody.implicitHeight + Style.space(16)
                 radius: 14
@@ -987,21 +1092,14 @@ Panel {
                   ? Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.08)
                   : (modelData.mine ? root.outFill : root.inFill)
 
-                TextEdit {
+                SelectableText {
                   id: msgBody
                   anchors.verticalCenter: parent.verticalCenter
                   anchors.left: parent.left
                   anchors.leftMargin: Style.space(12)
                   width: Math.min(msgList.width * 0.70, implicitWidth)
-                  readOnly: true
-                  selectByMouse: true
-                  selectByKeyboard: true
                   textFormat: TextEdit.RichText
                   text: modelData.html || ""
-                  wrapMode: TextEdit.Wrap
-                  color: root.fg
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.body
                   onLinkActivated: function(link) {
                     var href = Model.parseHttpsUrl(link)
                     if (href) Qt.openUrlExternally(href)
@@ -1031,15 +1129,26 @@ Panel {
                 font.pixelSize: Style.font.caption
               }
 
-              Button {
-                visible: !!modelData.otp
-                text: "Copy " + modelData.otp
-                bordered: true
-                foreground: root.fg
-                accent: root.accent
-                fontFamily: root.fontFamily
-                fontSize: Style.font.caption
-                onClicked: if (hw) hw.copyText(modelData.otp)
+              Flow {
+                width: Math.max(bubble.width, Math.min(msgCopyBtn.implicitWidth
+                  + (msgCodeBtn.visible ? msgCodeBtn.implicitWidth + spacing : 0), msgList.width - Style.space(28)))
+                spacing: Style.space(6)
+                CopyTextButton {
+                  id: msgCopyBtn
+                  textItem: msgBody
+                  fullText: modelData.body || ""
+                }
+                Button {
+                  id: msgCodeBtn
+                  visible: !!modelData.otp
+                  text: "Copy " + modelData.otp
+                  bordered: true
+                  foreground: root.fg
+                  accent: root.accent
+                  fontFamily: root.fontFamily
+                  fontSize: Style.font.caption
+                  onClicked: if (hw) hw.copyText(modelData.otp)
+                }
               }
             }
           }
