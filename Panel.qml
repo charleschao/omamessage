@@ -1,5 +1,7 @@
 import QtQuick
+import QtQuick.Controls as Controls
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "Model.js" as Model
 
@@ -51,7 +53,7 @@ Panel {
     textFormat: TextEdit.PlainText
     color: root.fg
     selectionColor: root.accent
-    selectedTextColor: Color.popups.background
+    selectedTextColor: Commons.Color.popups.background
     font.family: root.fontFamily
     font.pixelSize: Style.font.body
     onActiveFocusChanged: {
@@ -128,9 +130,9 @@ Panel {
   }
   readonly property var inboxList: root.noticesTab ? root.visibleNotices : root.visibleThreads
 
-  readonly property color fg: bar ? bar.foreground : Color.popups.text
-  readonly property color muted: Color.muted
-  readonly property color accent: Color.accent
+  readonly property color fg: bar ? bar.foreground : Commons.Color.popups.text
+  readonly property color muted: Commons.Color.muted
+  readonly property color accent: Commons.Color.accent
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
   readonly property color hoverFill: Style.hoverFillFor(root.fg, root.accent)
   readonly property color inFill: Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.10)
@@ -159,7 +161,6 @@ Panel {
   readonly property int copyHintH: root.noticesTab || root.page === "thread" ? Style.space(26) : 0
   readonly property int noteH: {
     if (root.actionNote === "") return 0
-    if (root.page !== "thread" && root.page !== "compose" && !root.noticesTab) return 0
     if (root.sendFailed && (root.page === "thread" || root.page === "compose")) return Style.space(36)
     return Style.space(28)
   }
@@ -219,6 +220,16 @@ Panel {
     }
   }
 
+  function openMessageMenu(source, mouse, message, thread) {
+    var point = source.mapToItem(keyCatcher, mouse.x, mouse.y)
+    messageMenu.message = message
+    messageMenu.thread = thread
+    messageMenu.x = Math.max(0, Math.min(point.x, keyCatcher.width - messageMenu.width))
+    messageMenu.y = Math.max(0, Math.min(point.y, keyCatcher.height - messageMenu.implicitHeight))
+    messageMenu.open()
+    return messageMenu
+  }
+
   function sendReplyNow() {
     if (!hw || !replyField.text.replace(/^\s+|\s+$/g, "") || !root.selectedThread) return
     if (!hw.sendTo(root.selectedThread.handle, replyField.text)) return
@@ -259,6 +270,7 @@ Panel {
 
   onInboxListChanged: root.clampCursor()
   onSearchQueryChanged: root.cursorIndex = 0
+  onOpenedChanged: if (!root.opened) messageMenu.close()
   onTabChanged: {
     root.cursorIndex = 0
     root.cursorActive = false
@@ -267,6 +279,7 @@ Panel {
   Connections {
     target: hw
     function onPageChanged() {
+      messageMenu.close()
       if (root.page === "thread") {
         msgList.pinToEnd = true
         Qt.callLater(root.focusComposer)
@@ -291,7 +304,7 @@ Panel {
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
-      blocked: searchField.activeFocus || replyField.activeFocus || toField.activeFocus || composeField.activeFocus || root.textFocused
+      blocked: messageMenu.opened || searchField.activeFocus || replyField.activeFocus || toField.activeFocus || composeField.activeFocus || root.textFocused
       onCloseRequested: {
         if (root.page !== "inbox" && hw) hw.backToList()
         else root.close()
@@ -339,6 +352,71 @@ Panel {
         sequence: "Ctrl+A"
         enabled: root.opened && !keyCatcher.blocked
         onActivated: if (hw) hw.markAllRead()
+      }
+
+      Controls.Popup {
+        id: messageMenu
+        property var message: null
+        property var thread: null
+        width: Math.min(Style.space(290), keyCatcher.width)
+        padding: Style.space(10)
+        modal: false
+        focus: true
+        closePolicy: Controls.Popup.CloseOnEscape | Controls.Popup.CloseOnPressOutside
+        onClosed: {
+          message = null
+          thread = null
+          if (root.opened) keyCatcher.forceActiveFocus()
+        }
+        background: BorderSurface {
+          color: Commons.Color.popups.background
+          borderSpec: Border.flat(root.muted, 1)
+          radius: Style.cornerRadius
+        }
+        contentItem: Column {
+          spacing: Style.space(8)
+          Button {
+            visible: !!messageMenu.message
+            width: parent.width
+            text: "Copy text"
+            bordered: true
+            foreground: root.fg
+            accent: root.accent
+            fontFamily: root.fontFamily
+            fontSize: Style.font.bodySmall
+            onClicked: {
+              if (hw && messageMenu.message) hw.copyText(messageMenu.message.body)
+              messageMenu.close()
+            }
+          }
+          Button {
+            width: parent.width
+            text: messageMenu.message ? "Delete message from widget" : "Delete conversation from widget"
+            enabled: !!hw && (messageMenu.message ? !!messageMenu.message.handle && !messageMenu.message.pending
+              && (!Model.isLocalHandle(messageMenu.message.handle) || messageMenu.message.failed) : !!messageMenu.thread)
+            bordered: true
+            foreground: root.fg
+            accent: root.accent
+            fontFamily: root.fontFamily
+            fontSize: Style.font.bodySmall
+            onClicked: {
+              if (hw) {
+                if (messageMenu.message) hw.removeMessage(messageMenu.message)
+                else hw.removeConversation(messageMenu.thread)
+              }
+              messageMenu.close()
+            }
+          }
+          Text {
+            width: parent.width
+            text: "Only removes from this widget.\nTether's cache and iPhone are unchanged."
+            textFormat: Text.PlainText
+            wrapMode: Text.WordWrap
+            color: root.muted
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+          }
+        }
       }
 
       Column {
@@ -775,7 +853,7 @@ Panel {
                     anchors.centerIn: parent
                     textFormat: Text.PlainText
                     text: modelData.unread > 99 ? "99+" : String(modelData.unread)
-                    color: Color.popups.background
+                    color: Commons.Color.popups.background
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.caption
                     font.bold: true
@@ -788,11 +866,13 @@ Panel {
               id: rowHover
               anchors.fill: parent
               hoverEnabled: true
+              acceptedButtons: Qt.LeftButton | Qt.RightButton
               cursorShape: Qt.PointingHandCursor
-              onClicked: {
+              onClicked: function(mouse) {
                 root.cursorActive = false
                 root.cursorIndex = index
-                if (hw) hw.openThread(modelData)
+                if (mouse.button === Qt.RightButton) root.openMessageMenu(rowHover, mouse, null, modelData)
+                else if (hw) hw.openThread(modelData)
               }
             }
           }
@@ -1107,12 +1187,13 @@ Panel {
                 }
 
                 MouseArea {
+                  id: messageContextArea
                   anchors.fill: parent
                   acceptedButtons: Qt.RightButton
                   preventStealing: true
                   onClicked: function(mouse) {
-                    if (mouse.button === Qt.RightButton && hw && modelData.body)
-                      hw.copyText(modelData.body)
+                    if (mouse.button === Qt.RightButton)
+                      root.openMessageMenu(messageContextArea, mouse, modelData, root.selectedThread)
                   }
                   onPressAndHold: if (hw && modelData.body) hw.copyText(modelData.body)
                 }

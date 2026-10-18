@@ -10,6 +10,8 @@ const repo = path.join(__dirname, "..")
 const qml = fs.readFileSync(path.join(repo, "BarWidget.qml"), "utf8")
 const Model = vm.createContext({})
 vm.runInContext(fs.readFileSync(path.join(repo, "Model.js"), "utf8"), Model)
+const LocalInbox = vm.createContext({ Model })
+vm.runInContext(fs.readFileSync(path.join(repo, "LocalInbox.js"), "utf8").replace(/^\.import[^\n]*\n/, ""), LocalInbox)
 
 // Exercise the widget's actual controller functions with a fake socket/timer.
 // Top-level QML functions all end at the same two-space indentation.
@@ -28,16 +30,20 @@ function widget() {
     drafts: Model.emptyDict(), readWatermarks: Model.emptyDict(), markedRead: Model.emptyDict(),
     markAllQueue: [], actionNote: "", messagesLoading: false, opened: true,
     contactQuery: "", contacts: [],
+    settings: {}, moduleName: "io.github.charleschao.omamessage",
+    bar: { shell: { updateEntryInline() {} } },
     sendCmd(command) { sent.push(command); return root.socketUp }
   }
   Object.defineProperties(root, {
+    removals: { get: () => LocalInbox.parse(root.settings.localRemovals) },
     mapUp: { get: () => root.status.map === true },
     messages: { get: () => root.selectedThread
-      ? Model.mergeMessages(root.serverMessages, root.outbox, root.selectedThread.handle) : [] },
+      ? LocalInbox.messages(Model.mergeMessages(root.serverMessages, root.outbox, root.selectedThread.handle),
+                            root.removals, root.selectedThread.handle) : [] },
     failedSend: { get: () => [...root.outbox].reverse().find(row => row.failed && root.selectedThread
       && Model.sameThread(row.thread, root.selectedThread.handle)) || null }
   })
-  const ctx = vm.createContext({ root, Model, sendWatchdog: timer, panelLoader: { item: null },
+  const ctx = vm.createContext({ root, Model, LocalInbox, sendWatchdog: timer, panelLoader: { item: null },
     contactTimer: { restart() {} } })
   for (const [source, name] of functions) {
     if (name === "sendCmd") continue
@@ -360,3 +366,94 @@ for (const [name, test] of Object.entries(auditTests)) {
 }
 assert.equal(auditFailures, 0, "audit regressions")
 console.log("sending and conversation refresh ok")
+
+{
+  const w = widget()
+  const message = { handle: "remove-me", thread: alice.handle, timestamp: 100, body: "private text", read: true }
+  const other = { handle: "keep-me", thread: alice.handle, timestamp: 90, body: "keep", read: true }
+  w.serverMessages = Model.parseMessages({ messages: [other, message] })
+  w.threads = [{ ...alice, timestamp: 100, preview: message.body, unread: 1 }, bob]
+  w.replyDraft = "keep draft"
+  assert(w.removeMessage(w.messages[1]))
+  assert.equal(w.messages.length, 1)
+  assert.equal(w.replyDraft, "keep draft")
+  assert.equal(w.threads[0].preview, "Message removed")
+  assert.equal(w.commands.length, 0, "local removal must never send phone deletion commands")
+  assert(!JSON.stringify(w.settings).includes(message.body), "persist identifiers, never content")
+  w.handleLine(JSON.stringify({ command: "bt_messages", thread: "tel:5555550123", messages: [other, message] }))
+  assert.equal(w.messages.length, 1, "polls and aliases cannot restore a removed message")
+  const restarted = widget()
+  restarted.settings = JSON.parse(JSON.stringify(w.settings))
+  restarted.handleLine(JSON.stringify({ command: "bt_messages", thread: alice.handle, messages: [other, message] }))
+  assert.equal(restarted.messages.length, 1, "removal survives shell restart")
+  restarted.selectedThread = bob
+  restarted.handleLine(JSON.stringify({ command: "bt_messages", thread: bob.handle,
+    messages: [{ ...message, thread: bob.handle }] }))
+  assert.equal(restarted.messages.length, 1, "same handle in another conversation is not removed")
+}
+
+{
+  const w = widget()
+  w.threads = [{ ...alice, timestamp: 100, preview: "old" }, bob]
+  w.replyDraft = "delete draft"
+  w.stashDraft(alice.handle, "stored draft")
+  w.outbox = Model.appendOutgoing([], alice.handle, "unsent failure", 90, "local-failed", false)
+  w.outbox = Model.updateOutgoing(w.outbox, "local-failed", { pending: false, failed: true })
+  w.serverMessages = Model.parseMessages({ messages: [{ handle: "old", thread: alice.handle, body: "old", timestamp: 100 }] })
+  assert(w.removeConversation(w.threads[0]))
+  const before = w.removals.threads[0].before
+  assert.equal(w.page, "inbox")
+  assert.equal(w.selectedThread, null)
+  assert.equal(w.serverMessages.length, 0)
+  assert.equal(w.outbox.length, 0)
+  assert.equal(w.replyDraft, "")
+  assert.equal(Model.getDraft(w.drafts, alice.handle), "")
+  assert.equal(w.threads.length, 1)
+  assert.equal(w.threads[0].name, "Bob")
+  w.handleLine(JSON.stringify({ command: "bt_threads", threads: [
+    { thread: "tel:5555550123", name: "Alice", timestamp: 100, preview: "old" },
+    { thread: bob.handle, name: "Bob", timestamp: 100 }
+  ] }))
+  assert.equal(w.threads.length, 1)
+  w.handleLine(JSON.stringify({ command: "bt_threads", threads: [
+    { thread: alice.handle, name: "Alice", timestamp: before + 10, preview: "new" }
+  ] }))
+  assert.equal(w.threads.length, 1, "new messages can bring back the conversation")
+  w.openThread(w.threads[0])
+  w.handleLine(JSON.stringify({ command: "bt_messages", thread: alice.handle, messages: [
+    { handle: "old", timestamp: 100, body: "old" },
+    { handle: "new", timestamp: before + 10, body: "new", read: true }
+  ] }))
+  assert.deepEqual(Array.from(w.messages, row => row.body), ["new"], "old history stays removed")
+  w.page = "compose"
+  w.handleLine(JSON.stringify({ command: "bt_contacts", contacts: [{ name: "Alice", addresses: [alice.handle] }] }))
+  assert.equal(w.contacts[0].name, "Alice", "the address book contact is untouched")
+}
+
+{
+  const w = widget()
+  w.sendTo(alice.handle, "sending")
+  assert.equal(w.removeMessage(w.messages[0]), false)
+  assert.equal(w.removeConversation(alice), false)
+  assert.equal(w.outbox.length, 1)
+  assert.equal(w.activeSend.body, "sending")
+  w.result(w.activeSend, false, { message: "Rejected" })
+  const failed = w.messages[0]
+  assert(w.removeMessage(failed))
+  assert.equal(w.messages.length, 0)
+  assert.equal(w.failedSend, null)
+  assert.equal(w.replyDraft, "")
+  assert.equal(Model.getDraft(w.drafts, alice.handle), "")
+}
+
+{
+  const w = widget()
+  w.bar = null
+  w.serverMessages = Model.parseMessages({ messages: [{ handle: "kept", timestamp: 10, body: "kept" }] })
+  assert.equal(w.removeMessage(w.messages[0]), false)
+  assert.equal(w.messages.length, 1, "do not pretend removal succeeded without persistence")
+  w.bar = { shell: { updateEntryInline() { return false } } }
+  assert.equal(w.removeMessage(w.messages[0]), false)
+  assert.equal(w.messages.length, 1, "respect a rejected settings update")
+}
+console.log("local message and conversation removal ok")

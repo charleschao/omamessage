@@ -50,7 +50,7 @@ omarchy plugin validate .
 omarchy plugin remove io.github.charleschao.omamessage
 ```
 
-This plugin writes no state, cache, or credentials of its own. Removal deletes the widget from the Omarchy plugins directory.
+The plugin stores local removal identifiers and timestamps in its inline Omarchy bar settings so removed items stay hidden after a shell restart. It stores no message bodies, contact names, or credentials on disk. Plugin removal deletes the widget from the Omarchy plugins directory.
 
 It does **not** stop or uninstall Tether. `tetherd`, `tether-gtk`, pairing, and anything Tether stored stay until you remove Tether itself.
 
@@ -78,7 +78,10 @@ It does **not** stop or uninstall Tether. `tetherd`, `tether-gtk`, pairing, and 
 - Missing send results show **Send unconfirmed**; the queue continues without automatically resending a message that may already be on the iPhone. Queued messages wait through a connection loss while the shell stays running.
 - Thread transcript with day headings, grouped bubbles, and group-chat sender names
 - Every bubble has a visible **Copy text** button; highlight part of a message to use **Copy selection** or `Ctrl+C`
-- Links open in the browser; right-clicking a bubble also copies the whole message
+- Right-click a message for **Copy text** or **Delete message from widget**. Right-click a conversation for **Delete conversation from widget**, which removes its row, loaded history, local outgoing copies, and draft without deleting the address-book contact. Messages must finish sending before conversation removal; individual sent bubbles must also sync first.
+- Removals persist through refresh and restart. A new message can bring back a removed conversation; its older history stays hidden. Contacts remain available under **New**.
+- **These actions remove content from Omamessage only. Tether does not expose individual cache deletion, so its stored history remains; iPhone messages and contacts are unchanged.** Tether's retention controls stay in Tether.
+- Links open in the browser
 - Detected one-time codes keep a separate **Copy XXXXX** action
 - First-run empty state with **Open Tether** and **Ask iPhone**
 
@@ -128,7 +131,9 @@ Shortcuts apply while the popout is focused and you are not typing in Search, To
 | Drag across message or notification text | Highlight specific text; the button becomes **Copy selection** |
 | Click **Copy selection** or press `Ctrl+C` | Copy only the highlighted text |
 | Click **Copy XXXXX** | Copy just the detected one-time code |
-| Right-click or hold a bubble | Copy the whole message |
+| Right-click a bubble | Open Copy / Delete from widget menu |
+| Right-click a conversation | Open Delete conversation from widget menu |
+| Hold a bubble | Copy the whole message |
 | Click **Open** or the header of a notification with a complete HTTPS link | Open that exact web destination (Discord, Telegram, and X links included) |
 | Click another non-Messages notification | Copy its text |
 | Click the X on a notification | Dismiss it on the iPhone |

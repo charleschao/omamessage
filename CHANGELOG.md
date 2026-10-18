@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Right-click a message or conversation to remove it from the widget. Removal records persist across refresh and shell restart; conversation removal also clears its local draft and outgoing copies. Phone messages, contacts, and Tether's separate cache stay unchanged.
+
 ## [0.5.4] — 2026-10-09
 
 - Send stays available while earlier messages finish; new messages queue in order and remain visible across conversation changes. Send results are matched by operation ID, and missing results release the queue without automatically retrying a possibly delivered message.

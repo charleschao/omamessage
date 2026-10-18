@@ -5,6 +5,7 @@ import Quickshell.Io
 import qs.Commons
 import qs.Ui
 import "Model.js" as Model
+import "LocalInbox.js" as LocalInbox
 
 // Omarchy bar inbox for Tether by Zack Bartel — https://github.com/zackb/tether
 BarWidget {
@@ -17,8 +18,10 @@ BarWidget {
   property var devices: []
   property var threads: []
   property var serverMessages: []
+  readonly property var removals: LocalInbox.parse(root.settings ? root.settings.localRemovals : null)
   readonly property var messages: root.selectedThread
-    ? Model.mergeMessages(root.serverMessages, root.outbox, root.selectedThread.handle) : []
+    ? LocalInbox.messages(Model.mergeMessages(root.serverMessages, root.outbox, root.selectedThread.handle),
+                          root.removals, root.selectedThread.handle) : []
   property var contacts: []
   property var calls: []
   property var notifications: []
@@ -192,7 +195,7 @@ BarWidget {
       return
     }
     if (cmd === "bt_threads") {
-      root.threads = Model.applyReadWatermarks(Model.parseThreads(ev), root.readWatermarks)
+      root.threads = LocalInbox.threads(Model.applyReadWatermarks(Model.parseThreads(ev), root.readWatermarks), root.removals)
       if (root.selectedThread) {
         var listed = Model.threadByHandle(root.threads, root.selectedThread.handle)
         if (listed) root.selectedThread = Model.mergeSelectedThread(root.selectedThread, listed)
@@ -201,7 +204,7 @@ BarWidget {
     }
     if (cmd === "bt_messages") {
       var key = String(ev.thread || "")
-      var msgs = Model.parseMessages(ev)
+      var msgs = LocalInbox.messages(Model.parseMessages(ev), root.removals, key)
       var queue = root.markAllQueue || []
       var markingAll = queue.length && Model.sameThread(queue[0], key)
       if (markingAll) root.markRead(msgs)
@@ -392,6 +395,67 @@ BarWidget {
   function stashDraft(handle, text) {
     if (!handle) return
     root.drafts = Model.putDraft(root.drafts, handle, text)
+  }
+
+  function persistRemovals(state) {
+    if (!root.bar || !root.bar.shell || typeof root.bar.shell.updateEntryInline !== "function") {
+      root.setNote("Cannot save local removals. Try reopening the widget.")
+      return false
+    }
+    var entry = { id: root.moduleName }
+    for (var key in root.settings) if (key !== "id") entry[key] = root.settings[key]
+    entry.localRemovals = state
+    if (root.bar.shell.updateEntryInline(root.moduleName, entry) === false) {
+      root.setNote("Could not save the removal in Omarchy's bar settings.")
+      return false
+    }
+    root.settings = entry
+    return true
+  }
+
+  function scrubRemovedContent() {
+    root.threads = LocalInbox.threads(root.threads, root.removals)
+    if (root.selectedThread) {
+      root.serverMessages = LocalInbox.messages(root.serverMessages, root.removals, root.selectedThread.handle)
+      var listed = Model.threadByHandle(root.threads, root.selectedThread.handle)
+      if (listed) root.selectedThread = Model.mergeSelectedThread(root.selectedThread, listed)
+    }
+  }
+
+  function removeMessage(message) {
+    if (!root.selectedThread || !message || !message.handle) return false
+    if (message.pending || (Model.isLocalHandle(message.handle) && !message.failed)) {
+      root.setNote("Wait for this message to sync before removing it.")
+      return false
+    }
+    var thread = root.selectedThread.handle
+    if (!root.persistRemovals(LocalInbox.removeMessage(root.removals, message, thread))) return false
+    root.outbox = Model.removeOutgoing(root.outbox, message.handle)
+    // A failed outgoing message may also have restored its text as a draft.
+    if (message.failed && root.replyDraft === message.body) root.replyDraft = ""
+    if (message.failed && Model.getDraft(root.drafts, thread) === message.body) root.stashDraft(thread, "")
+    root.scrubRemovedContent()
+    root.setNote("Removed from widget. Tether's cache is unchanged.")
+    return true
+  }
+
+  function removeConversation(thread) {
+    if (!thread || !thread.handle) return false
+    if (root.outbox.some(function(row) { return row.pending && Model.sameThread(row.thread, thread.handle) })) {
+      root.setNote("Wait for this conversation's messages to finish sending.")
+      return false
+    }
+    if (!root.persistRemovals(LocalInbox.removeThread(root.removals, thread, Date.now() / 1000))) return false
+    // Leave no body or draft for this conversation in the widget's memory.
+    root.outbox = root.outbox.filter(function(row) { return !Model.sameThread(row.thread, thread.handle) })
+    root.stashDraft(thread.handle, "")
+    if (root.selectedThread && Model.sameThread(root.selectedThread.handle, thread.handle)) {
+      root.replyDraft = ""
+      root.backToList()
+    }
+    root.scrubRemovedContent()
+    root.setNote("Conversation removed from widget. Contact and Tether cache kept.")
+    return true
   }
 
   function adoptThreadKey(key) {
@@ -708,6 +772,7 @@ BarWidget {
 
   onBarChanged: injectPanel()
   onSettingsChanged: injectPanel()
+  onRemovalsChanged: scrubRemovedContent()
   Component.onCompleted: {
     if (root.socketPath) socketLoader.active = true
     injectPanel()
