@@ -137,12 +137,44 @@ function parseConnection(obj) {
     classic: obj.classic_connected === true,
     le: obj.le_connected === true || obj.le_available === true,
     ancs: obj.ancs_ready === true,
+    mapHeld: obj.map_held === true,
+    pbapHeld: obj.pbap_held === true,
+    ancsHeld: obj.ancs_held === true,
+    battery: typeof obj.battery === "number" && isFinite(obj.battery) && obj.battery >= 0 && obj.battery <= 100 ? Math.floor(obj.battery) : -1,
+    carrier: obj.calls && obj.calls.available === true ? field(obj.calls.operator, MAX_NAME) : "",
+    signal: obj.calls && obj.calls.available === true && typeof obj.calls.signal === "number"
+      && obj.calls.signal >= 0 && obj.calls.signal <= 5 ? Math.floor(obj.calls.signal) : -1,
     mapError: field(obj.map_error, MAX_STATUS),
     note: field(obj.profile_reason || obj.link_reason, MAX_NOTE),
     linkReason: field(obj.link_reason, MAX_NOTE),
     profileReason: field(obj.profile_reason, MAX_NOTE),
     ancsReason: field(obj.ancs_reason, MAX_NOTE)
   }
+}
+
+function parseDaemonStatus(obj) {
+  obj = asObject(obj) || {}
+  var version = field(obj.version, MAX_STATUS)
+  var parts = version.split(".")
+  var major = parseInt(parts[0], 10) || 0
+  var minor = parseInt(parts[1], 10) || 0
+  var patch = parseInt(parts[2], 10) || 0
+  return {
+    version: version,
+    removeThread: major > 0 || minor > 2 || (minor === 2 && patch >= 42),
+    hideUnknown: obj.hide_unknown_senders === true,
+    audioChoice: /^(auto|here|phone)$/.test(obj.phone_audio || "") ? obj.phone_audio : "",
+    audioRoute: /^(here|phone|unavailable)$/.test(obj.phone_audio_route || "") ? obj.phone_audio_route : "unavailable"
+  }
+}
+
+function phoneStatus(status) {
+  if (!status || !status.present) return ""
+  var bits = []
+  if (status.battery >= 0) bits.push(status.battery + "% battery")
+  if (status.carrier) bits.push(status.carrier)
+  if (status.signal >= 0) bits.push("Signal " + status.signal + "/5")
+  return bits.join(" · ")
 }
 
 function parseDevices(obj) {
@@ -338,6 +370,7 @@ function parseNotification(row) {
     uid: uid,
     appId: appId,
     app: appName,
+    icons: notificationIcons(appId, parseInt(n.category, 10) || 0),
     title: title,
     subtitle: subtitle,
     body: body,
@@ -357,23 +390,55 @@ function parseNotification(row) {
   }
 }
 
+function notificationIcons(appId, category) {
+  // Resolve installed icons by name; no Tether artwork is bundled here.
+  var apps = {
+    "com.apple.MobileSMS": ["chat-message-new-symbolic"],
+    "com.apple.mobilemail": ["mail-unread"],
+    "com.hammerandchisel.discord": ["discord", "tether-app-discord"],
+    "com.google.Gmail": ["gmail", "tether-app-gmail"],
+    "com.google.ios.youtube": ["youtube", "tether-app-youtube"],
+    "com.burbn.instagram": ["instagram", "tether-app-instagram"],
+    "com.facebook.Facebook": ["facebook", "tether-app-facebook"],
+    "com.atebits.Tweetie2": ["twitter", "tether-app-x"],
+    "com.github.github": ["github", "tether-app-github"],
+    "com.github.stormbreaker.prod": ["github", "tether-app-github"],
+    "com.spotify.client": ["spotify", "tether-app-spotify"],
+    "com.reddit.Reddit": ["reddit", "tether-app-reddit"],
+    "com.toyopagroup.picaboo": ["snapchat", "tether-app-snapchat"],
+    "com.zhiliaoapp.musically": ["tiktok", "tether-app-tiktok"],
+    "net.whatsapp.WhatsApp": ["whatsapp", "tether-app-whatsapp"],
+    "org.telegram.messenger": ["telegram", "tether-app-telegram"],
+    "ph.telegra.Telegraph": ["telegram", "tether-app-telegram"],
+    "org.whispersystems.signal": ["signal-desktop", "tether-app-signal"],
+    "com.instructure.icanvas": ["tether-app-canvas"],
+    "com.instructure.ios.CanvasParent": ["tether-app-canvas"],
+    "com.instructure.ios.CanvasStudent": ["tether-app-canvas"],
+    "com.instructure.ios.CanvasTeacher": ["tether-app-canvas"]
+  }
+  var names = Object.prototype.hasOwnProperty.call(apps, appId) ? apps[appId].slice() : []
+  if (category === 1 || category === 2) names.push("call-start-symbolic")
+  else if (category === 6) names.push("mail-unread")
+  names.push("preferences-system-notifications-symbolic")
+  return names
+}
+
 function completeNotificationUrl(url) {
   var raw = String(url == null ? "" : url)
   // iOS truncates long URLs with this character. The missing path segment can
   // contain the Discord message ID or X status ID, so it is not recoverable.
-  if (raw.indexOf("…") >= 0 || /%e2%80%a6/i.test(raw)) return ""
+  if (raw.indexOf("…") >= 0 || /%e2%80%a6|\.{3}/i.test(raw)) return ""
   return parseHttpsUrl(raw)
 }
 
 function notificationUrlInText(text) {
-  var raw = String(text == null ? "" : text)
-  var re = /(?:https?:\/\/|www\.|discord(?:app)?\.com\/|(?:web\.)?telegram\.org\/|t\.me\/|(?:www\.)?(?:x|twitter)\.com\/)[^\s<>"']+/ig
-  var m = re.exec(raw)
-  if (!m) return ""
-  var candidate = trimUrl(m[0])
-  if (!candidate) return ""
-  if (!/^https?:\/\//i.test(candidate)) candidate = "https://" + candidate
-  return completeNotificationUrl(candidate)
+  var links = textLinks(text)
+  for (var i = 0; i < links.length; i++) {
+    if (links[i].truncated) continue
+    var url = completeNotificationUrl(links[i].href)
+    if (url) return url
+  }
+  return ""
 }
 
 function notificationWebUrl(row, text) {
@@ -518,6 +583,8 @@ function barLabel(unread, mapUp, daemonOk, notices, ancsUp, ringing) {
 function statusTitle(status, daemonOk) {
   if (!daemonOk) return "Tether is not running"
   if (!status) return "Not connected"
+  if (status.mapHeld) return "Messages released on this computer"
+  if (!status.map && status.mapError === "busy") return "Messages in use on another computer"
   if (status.map && status.ancs) return "Messages and notifications"
   if (status.map) return "Messages connected"
   if (status.ancs) return "Notifications connected"
@@ -529,6 +596,8 @@ function statusTitle(status, daemonOk) {
 
 function setupHint(status, daemonOk) {
   if (!daemonOk) return "Open Tether to start the daemon, then pair your iPhone."
+  if (status && status.mapHeld) return status.profileReason || "Messages are released here. Manage connection sharing in Tether."
+  if (status && status.mapError === "busy") return status.profileReason || "Another computer is using Messages. Wait for it to release the iPhone."
   if (status && status.note) return status.note
   if (status && status.present) return "On the iPhone: Settings → Bluetooth → this PC → Show Message Notifications and Sync Contacts."
   return "Pair the iPhone in Tether, then enable message notifications on the phone."
@@ -536,6 +605,7 @@ function setupHint(status, daemonOk) {
 
 function ancsHint(status, daemonOk) {
   if (!daemonOk) return "Open Tether to start the daemon, then pair your iPhone."
+  if (status && status.ancsHeld) return "Notifications are released on this computer. Manage connection sharing in Tether."
   if (status && status.ancsReason) return status.ancsReason
   if (status && status.present) return "On the iPhone: Settings → Bluetooth → this PC → Show Message Notifications."
   return "Pair the iPhone in Tether to mirror notifications."
@@ -543,6 +613,7 @@ function ancsHint(status, daemonOk) {
 
 function needsSolicit(status) {
   if (!status) return false
+  if (status.mapHeld || status.mapError === "busy") return false
   var err = String(status.mapError || "")
   return err === "forbidden" || err === "no_record"
 }
@@ -747,22 +818,36 @@ function trimUrl(url) {
   return url
 }
 
-function linkify(body) {
+function textLinks(body) {
   var raw = String(body == null ? "" : body)
-  var re = /(https?:\/\/|www\.)[^\s<>"']+/gi
-  var out = ""
-  var cursor = 0
+  var re = /(?:https?:\/\/|www\.)[^\s<>"']+|(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,63}(?::[1-9][0-9]{0,4})?(?:[/?#][^\s<>"']*)?/gi
+  var links = []
   var m
   while ((m = re.exec(raw))) {
+    // A bare domain inside an email, unsupported scheme, or larger token is
+    // text. Never turn a rejected URL's hostname into a different link.
+    var preceding = m.index > 0 ? raw.charAt(m.index - 1) : ""
+    if (preceding && /[a-z0-9_@.\/:+\-]/i.test(preceding)) continue
     var url = trimUrl(m[0])
-    if (!url) continue
-    out += escapeHtml(raw.slice(cursor, m.index))
-    var candidate = url.slice(0, 4).toLowerCase() === "www." ? "https://" + url : url
+    var following = raw.charAt(m.index + m[0].length)
+    if (!url || (following && /[a-z0-9_@\-…]/i.test(following))) continue
+    var candidate = /^https?:\/\//i.test(url) ? url : "https://" + url
     var href = parseHttpsUrl(candidate)
-    if (href) out += "<a href=\"" + escapeHtml(href) + "\">" + escapeHtml(url) + "</a>"
-    else out += escapeHtml(url)
-    cursor = m.index + url.length
-    re.lastIndex = cursor
+    if (href) links.push({ index: m.index, text: url, href: href, truncated: /…|\.{3}|%e2%80%a6/i.test(m[0]) })
+  }
+  return links
+}
+
+function linkify(body) {
+  var raw = String(body == null ? "" : body)
+  var links = textLinks(raw)
+  var out = ""
+  var cursor = 0
+  for (var i = 0; i < links.length; i++) {
+    var link = links[i]
+    out += escapeHtml(raw.slice(cursor, link.index))
+    out += "<a href=\"" + escapeHtml(link.href) + "\">" + escapeHtml(link.text) + "</a>"
+    cursor = link.index + link.text.length
   }
   out += escapeHtml(raw.slice(cursor))
   return out
@@ -868,8 +953,8 @@ function normalizeHandle(value) {
 
 function telSuffix(raw) {
   var digits = String(raw || "").replace(/\D/g, "")
-  if (digits.length < 10) return ""
-  return digits.slice(-10)
+  if (digits.length < 9) return ""
+  return digits.slice(-9)
 }
 
 function threadBucket(key) {

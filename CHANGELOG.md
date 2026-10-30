@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Add **Audio → Turn audio off / on** to keep music and sounds on the iPhone or route them to the computer. The choice stays until changed; there is no automatic restore.
+- Show phone battery, carrier, and signal when available; recognize intentionally released and busy MAP connections, and reflect Tether's unknown-sender filter.
+- Add notification app icons using installed theme/Tether icons, and recognize bare-domain HTTPS destinations.
+- Add a separate confirmed **Remove from Tether inbox…** action for Tether 0.2.42+, while keeping widget-only deletion. Use the displayed thread timestamp for removal so concurrently arriving messages survive.
+- Match Tether's national/international phone-number handling, including trunk-zero numbers, for drafts, removals, and outgoing bubbles.
 - Right-click a message or conversation to remove it from the widget. Removal records persist across refresh and shell restart; conversation removal also clears its local draft and outgoing copies. Phone messages, contacts, and Tether's separate cache stay unchanged.
 
 ## [0.5.4] — 2026-10-09

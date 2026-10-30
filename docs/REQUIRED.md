@@ -13,11 +13,16 @@ $XDG_RUNTIME_DIR/tether/tetherd.sock
 The same socket `tether-gtk` uses. Typical commands:
 
 - `subscribe`
+- `bt_status` (version, routing availability, and current unknown-sender filtering)
 - `bt_connection` / `bt_list_devices` / `bt_list_threads` / `bt_list_messages`
 - `bt_list_contacts` / `bt_send_message` / `bt_mark_read`
 - `bt_list_notifications` / `bt_notification_action`
 - `bt_list_calls` / `bt_call_action`
 - `bt_solicit`
+- `bt_remove_thread` (optional shared inbox removal; Tether 0.2.42+)
+- `bt_set_phone_audio` (on/off music/sound routing; Tether 0.2.43+)
+
+The audio toggle talks JSON directly to the same daemon socket. **Off** selects the iPhone; **On** selects the computer. Tether remembers the choice, and the widget never restores or reverses it automatically. Existing system audio roles determine whether routing is available.
 
 OTP vault, browser, and mail add-ons stay in Tether (Firefox / Thunderbird). They are not installed by this plugin. Clipboard sync and file transfer stay in `tetherd` / `tether-gtk` / the iOS app.
 

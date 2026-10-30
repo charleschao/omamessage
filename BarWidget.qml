@@ -13,6 +13,9 @@ BarWidget {
   moduleName: "io.github.charleschao.omamessage"
 
   property bool daemonOk: false
+  property var daemonStatus: Model.parseDaemonStatus({})
+  property string audioPending: ""
+  readonly property bool audioBusy: root.audioPending !== ""
   property int reconnectAttempt: 0
   property var status: ({ present: false, paired: false, map: false, pbap: false, classic: false, le: false, ancs: false, mapError: "", note: "", linkReason: "", profileReason: "", ancsReason: "" })
   property var devices: []
@@ -101,6 +104,7 @@ BarWidget {
   }
 
   function pullState() {
+    root.sendCmd({ command: "bt_status" })
     root.sendCmd({ command: "bt_connection" })
     root.sendCmd({ command: "bt_list_devices" })
     root.sendCmd({ command: "bt_list_threads" })
@@ -129,6 +133,9 @@ BarWidget {
     root.daemonOk = false
     root.sockBuf = ""
     root.status = Model.parseConnection({})
+    root.daemonStatus = Model.parseDaemonStatus({})
+    root.audioPending = ""
+    audioWatchdog.stop()
     root.calls = []
     root.markedRead = Model.emptyDict()
     root.readWatermarks = Model.emptyDict()
@@ -190,8 +197,19 @@ BarWidget {
       var wasMapUp = root.mapUp
       root.daemonOk = true
       root.status = Model.parseConnection(ev)
+      root.sendCmd({ command: "bt_status" })
       root.pumpSendQueue()
       if (root.mapUp && !wasMapUp) root.pumpMarkAll()
+      return
+    }
+    if (cmd === "bt_status") {
+      root.daemonStatus = Model.parseDaemonStatus(ev)
+      if (root.audioPending && root.daemonStatus.audioChoice === root.audioPending
+          && root.daemonStatus.audioRoute === root.audioPending) {
+        root.setNote(root.audioPending === "here" ? "iPhone audio on computer: on." : "iPhone audio on computer: off.")
+        root.audioPending = ""
+        audioWatchdog.stop()
+      }
       return
     }
     if (cmd === "bt_threads") {
@@ -341,6 +359,23 @@ BarWidget {
     Quickshell.execDetached(["/usr/bin/uwsm-app", "--", "tether-gtk"])
   }
 
+  function phoneAudio(route) {
+    if (root.audioBusy || (route !== "here" && route !== "phone")) return false
+    if (!root.socketUp || !root.daemonStatus.audioChoice || root.daemonStatus.audioRoute === "unavailable") {
+      root.setNote("Phone audio is unavailable.")
+      return false
+    }
+    root.audioPending = route
+    audioWatchdog.restart()
+    if (!root.sendCmd({ command: "bt_set_phone_audio", route: route })) {
+      root.audioPending = ""
+      audioWatchdog.stop()
+      root.setNote("Tether is not running.")
+      return false
+    }
+    return true
+  }
+
   function backToList() {
     if (root.page === "thread" && root.selectedThread)
       root.stashDraft(root.selectedThread.handle, root.replyDraft)
@@ -445,7 +480,7 @@ BarWidget {
       root.setNote("Wait for this conversation's messages to finish sending.")
       return false
     }
-    if (!root.persistRemovals(LocalInbox.removeThread(root.removals, thread, Date.now() / 1000))) return false
+    if (!root.persistRemovals(LocalInbox.removeThread(root.removals, thread))) return false
     // Leave no body or draft for this conversation in the widget's memory.
     root.outbox = root.outbox.filter(function(row) { return !Model.sameThread(row.thread, thread.handle) })
     root.stashDraft(thread.handle, "")
@@ -455,6 +490,28 @@ BarWidget {
     }
     root.scrubRemovedContent()
     root.setNote("Conversation removed from widget. Contact and Tether cache kept.")
+    return true
+  }
+
+  function removeTetherConversation(thread) {
+    if (!thread || !thread.handle || !root.daemonStatus.removeThread) return false
+    if (root.outbox.some(function(row) { return row.pending && Model.sameThread(row.thread, thread.handle) })) {
+      root.setNote("Wait for this conversation's messages to finish sending.")
+      return false
+    }
+    if (!root.sendCmd({ command: "bt_remove_thread", thread: thread.handle,
+                        before: Model.epochOf(thread.timestamp) })) {
+      root.setNote("Tether is not running.")
+      return false
+    }
+    // The daemon owns this filter. Keep widget-only removals separate.
+    root.outbox = root.outbox.filter(function(row) { return !Model.sameThread(row.thread, thread.handle) })
+    root.stashDraft(thread.handle, "")
+    if (root.selectedThread && Model.sameThread(root.selectedThread.handle, thread.handle)) {
+      root.replyDraft = ""
+      root.backToList()
+    }
+    root.setNote("Removed from Tether's inbox on this computer. New messages bring it back.")
     return true
   }
 
@@ -779,6 +836,24 @@ BarWidget {
   }
 
   Timer {
+    id: audioWatchdog
+    interval: 45000
+    onTriggered: {
+      root.audioPending = ""
+      root.setNote("Tether did not confirm the audio change. Check the iPhone's connection.")
+    }
+  }
+
+  Timer {
+    interval: 5000
+    repeat: true
+    running: root.opened
+    onTriggered: {
+      root.sendCmd({ command: "bt_status" })
+    }
+  }
+
+  Timer {
     id: contactTimer
     interval: 280
     repeat: false
@@ -903,6 +978,8 @@ BarWidget {
     tooltipText: {
       var status = Model.statusTitle(root.status, root.daemonOk)
       var bits = []
+      var phoneStatus = Model.phoneStatus(root.status)
+      if (phoneStatus) bits.push(phoneStatus)
       if (root.ringingCall)
         bits.push(Model.callTitle(root.ringingCall) + " · " + Model.callParty(root.ringingCall))
       if (root.mapUp && root.unreadCount > 0)

@@ -14,10 +14,11 @@ assert(textKeys, "panel text-key handler found")
 let back = 0
 let searches = 0
 let tab = ""
+let audioOpened = 0
 const root = { page: "thread", get inboxMode() { return this.page === "inbox" } }
 const context = vm.createContext({ root,
   hw: { backToList() { back++ }, setTab(value) { tab = value } },
-  searchField: { forceActiveFocus() { searches++ } }
+  searchField: { forceActiveFocus() { searches++ } }, audioMenu: { open() { audioOpened++ } }
 })
 vm.runInContext(`function key(t) { ${textKeys[1]} }`, context)
 context.key("b")
@@ -29,6 +30,9 @@ context.key("/")
 assert.equal(searches, 1)
 context.key("n")
 assert.equal(tab, "notifications")
+root.audioAvailable = true
+context.key("a")
+assert.equal(audioOpened, 1)
 
 // Run the actual transcript layout handlers in Qt, with a focused composer.
 // This reproduces the off-screen-reply bug and verifies model resets whose

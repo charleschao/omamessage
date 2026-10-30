@@ -69,6 +69,7 @@ It does **not** stop or uninstall Tether. `tetherd`, `tether-gtk`, pairing, and 
 - Unread SMS or notification count beside the icon
 - Incoming-call indicator while the iPhone is ringing
 - Follows the Omarchy light or dark theme
+- Phone battery, carrier, and signal in the tooltip when Tether supplies them
 
 ### Messages
 
@@ -91,11 +92,22 @@ It does **not** stop or uninstall Tether. `tetherd`, `tether-gtk`, pairing, and 
 - Full, selectable notification text with **Copy text** and **Copy selection** buttons
 - Dismiss notifications on the iPhone or copy detected one-time codes
 - Messages notices open the SMS thread; other notices copy their text
+- App icons from the installed icon theme or Tether, with a generic fallback
+- Complete bare-domain links such as `example.com/help` open over HTTPS too
+
+### Phone status and audio
+
+- The popout shows phone battery and cellular status when available, and distinguishes a released Messages connection from one busy on another computer
+- If **Hide unknown senders** is enabled in Tether, its filtered inbox is used and the popout shows **Unknown senders hidden**
+- **Audio → Turn audio off** keeps the iPhone's music and sounds on the phone. **Turn audio on** routes them to the computer. Your choice stays until you toggle it again or change it in Tether; there is no automatic restore. Messages and notifications stay connected
+- Audio routing needs Tether 0.2.43 or newer and an available Bluetooth audio route. The toggle talks directly to the daemon socket. This control does not change your Bluetooth audio roles or enable call audio. Tether may restart WirePlumber once when setting up its per-phone routing rule for the first time
+
+Right-click a conversation for **Remove from Tether inbox…** (Tether 0.2.42+). After confirmation, this hides the displayed history across Tether clients on this computer; a newer message brings it back. The iPhone and Tether's stored history stay unchanged. **Delete conversation from widget** remains a separate, widget-only action. Individual-message removal stays widget-only.
 
 ### Calls
 
 - Incoming-call banner with Answer, Decline, or Hang up
-- Audio stays on the iPhone
+- Call audio remains managed by Tether and the system audio configuration
 
 Pairing, Bluetooth, clipboard sync, file transfer, retention, OTP vault, and desktop notification *popups* stay in Tether. Omamessage is the bar inbox and notification list.
 
@@ -109,6 +121,7 @@ Shortcuts apply while the popout is focused and you are not typing in Search, To
 | Enter or Space | Open the selected row |
 | `h` / `l` or ← / → | Messages ↔ Notifications (from the inbox); ← / `h` is Back in a thread |
 | `n` | Notifications tab |
+| `a` | Open the phone audio menu |
 | `Esc` | Back to the list (from the inbox, closes the pane) |
 | `/` | Search |
 | `x` | Dismiss the selected notification |
@@ -133,6 +146,8 @@ Shortcuts apply while the popout is focused and you are not typing in Search, To
 | Click **Copy XXXXX** | Copy just the detected one-time code |
 | Right-click a bubble | Open Copy / Delete from widget menu |
 | Right-click a conversation | Open Delete conversation from widget menu |
+| Choose **Remove from Tether inbox…** | Confirm removal across Tether clients on this computer |
+| **Audio → Turn audio off / on** | Keep music and sounds on the iPhone, or route them to the computer |
 | Hold a bubble | Copy the whole message |
 | Click **Open** or the header of a notification with a complete HTTPS link | Open that exact web destination (Discord, Telegram, and X links included) |
 | Click another non-Messages notification | Copy its text |

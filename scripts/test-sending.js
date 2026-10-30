@@ -24,6 +24,8 @@ function widget() {
   const timer = { running: false, restart() { this.running = true }, stop() { this.running = false } }
   const root = {
     socketUp: true, status: { map: true }, daemonOk: true, sockBuf: "",
+    daemonStatus: Model.parseDaemonStatus({ version: "0.3.2" }),
+    audioPending: "",
     outbox: [], sendQueue: [], activeSend: null, sendSession: "local-test", sendSerial: 0,
     serverMessages: [], selectedThread: alice, threads: [alice, bob],
     replyDraft: "", composeBody: "", composeTo: "", page: "thread", tab: "messages",
@@ -35,6 +37,7 @@ function widget() {
     sendCmd(command) { sent.push(command); return root.socketUp }
   }
   Object.defineProperties(root, {
+    audioBusy: { get: () => root.audioPending !== "" },
     removals: { get: () => LocalInbox.parse(root.settings.localRemovals) },
     mapUp: { get: () => root.status.map === true },
     messages: { get: () => root.selectedThread
@@ -44,6 +47,7 @@ function widget() {
       && Model.sameThread(row.thread, root.selectedThread.handle)) || null }
   })
   const ctx = vm.createContext({ root, Model, LocalInbox, sendWatchdog: timer, panelLoader: { item: null },
+    audioWatchdog: { restart() {}, stop() {} },
     contactTimer: { restart() {} } })
   for (const [source, name] of functions) {
     if (name === "sendCmd") continue
@@ -457,3 +461,69 @@ console.log("sending and conversation refresh ok")
   assert.equal(w.messages.length, 1, "respect a rejected settings update")
 }
 console.log("local message and conversation removal ok")
+
+{
+  const w = widget()
+  const shown = { ...alice, timestamp: 100 }
+  // A message arrived after the row used by the context menu was drawn.
+  w.threads = [{ ...alice, timestamp: 105, preview: "new" }]
+  assert(w.removeConversation(shown))
+  assert.equal(w.removals.threads[0].before, 100)
+  assert.equal(w.threads.length, 1, "a concurrent new message survives widget removal")
+}
+
+{
+  const w = widget()
+  w.replyDraft = "draft"
+  assert(w.removeTetherConversation({ ...alice, timestamp: 100 }))
+  const command = w.commands.find(row => row.command === "bt_remove_thread")
+  assert.deepEqual(JSON.parse(JSON.stringify(command)), { command: "bt_remove_thread", thread: alice.handle, before: 100 })
+  assert.equal(w.removals.threads.length, 0, "daemon removal does not create a widget filter")
+  assert.equal(w.replyDraft, "")
+  w.daemonStatus = Model.parseDaemonStatus({ version: "0.2.41" })
+  assert.equal(w.removeTetherConversation({ ...alice, timestamp: 100 }), false)
+  w.handleLine(JSON.stringify({ command: "bt_status", version: "0.3.2", hide_unknown_senders: true,
+    phone_audio: "auto", phone_audio_route: "here" }))
+  assert.equal(w.daemonStatus.hideUnknown, true)
+  assert.equal(w.daemonStatus.audioRoute, "here")
+}
+
+{
+  const w = widget()
+  w.selectedThread = { handle: "tel:0412345678", name: "Australian contact", repliable: true }
+  w.replyDraft = "national draft"
+  w.sendReply()
+  w.handleLine(JSON.stringify({ command: "bt_messages", thread: "tel:+61412345678", messages: [] }))
+  assert.equal(w.selectedThread.handle, "tel:+61412345678")
+  assert.equal(w.messages[0].body, "national draft", "outgoing bubbles follow the daemon's trunk-prefix alias")
+}
+console.log("upstream compatibility and shared removal ok")
+
+{
+  const w = widget()
+  w.handleLine(JSON.stringify({ command: "bt_status", phone_audio: "auto", phone_audio_route: "here" }))
+  assert(w.phoneAudio("phone"))
+  assert.equal(w.audioPending, "phone")
+  assert.equal(w.phoneAudio("here"), false, "wait for the pending routing request")
+  assert.deepEqual(JSON.parse(JSON.stringify(w.commands.at(-1))), { command: "bt_set_phone_audio", route: "phone" })
+  w.handleLine(JSON.stringify({ command: "bt_status", phone_audio: "phone", phone_audio_route: "here" }))
+  assert.equal(w.audioBusy, true, "a saved preference alone does not confirm the route")
+  w.handleLine(JSON.stringify({ command: "bt_status", phone_audio: "phone", phone_audio_route: "phone" }))
+  assert.equal(w.audioBusy, false)
+  assert.equal(w.actionNote, "iPhone audio on computer: off.")
+  const beforeRefresh = w.commands.length
+  w.pullState()
+  assert(w.commands.slice(beforeRefresh).every(row => row.command !== "bt_set_phone_audio"),
+    "refreshing the widget must never reverse the chosen route")
+  assert(w.phoneAudio("here"))
+  w.handleLine(JSON.stringify({ command: "bt_status", phone_audio: "here", phone_audio_route: "here" }))
+  assert.equal(w.audioBusy, false)
+  assert.equal(w.actionNote, "iPhone audio on computer: on.")
+  assert.equal(w.phoneAudio("pause"), false, "timed routing actions are not supported")
+  w.socketUp = false
+  assert.equal(w.phoneAudio("phone"), false)
+  w.socketUp = true
+  w.daemonStatus = Model.parseDaemonStatus({})
+  assert.equal(w.phoneAudio("phone"), false, "older daemons do not expose routing")
+}
+console.log("manual phone audio toggle ok")

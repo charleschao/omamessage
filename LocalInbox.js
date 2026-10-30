@@ -39,9 +39,10 @@ function removeMessage(state, message, thread) {
   return next
 }
 
-function removeThread(state, thread, now) {
+function removeThread(state, thread) {
   var next = parse(state)
-  var before = Math.max(Model.epochOf(now), Model.epochOf(thread.timestamp), cutoff(next, thread.handle))
+  // Use the history the user saw, never the time the menu was clicked.
+  var before = Math.max(Model.epochOf(thread.timestamp), cutoff(next, thread.handle))
   next.threads = next.threads.filter(function(row) { return !Model.sameThread(row.thread, thread.handle) })
   next.threads.push({ thread: Model.draftKey(thread.handle), before: before })
   next.messages = next.messages.filter(function(row) {

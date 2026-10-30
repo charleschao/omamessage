@@ -1,4 +1,5 @@
 import QtQuick
+import Quickshell
 import QtQuick.Controls as Controls
 import qs.Commons
 import qs.Commons as Commons
@@ -23,6 +24,10 @@ Panel {
   readonly property var calls: hw && hw.calls ? hw.calls : []
   readonly property var notifications: hw && hw.notifications ? hw.notifications : []
   readonly property var ringingCall: hw ? hw.ringingCall : null
+  readonly property string phoneStatus: Model.phoneStatus(root.status)
+  readonly property bool audioAvailable: !!hw && !!hw.daemonStatus.audioChoice
+  readonly property string phoneSummary: [root.phoneStatus,
+    hw && hw.daemonStatus.hideUnknown ? "Unknown senders hidden" : ""].filter(function(s) { return !!s }).join(" · ")
   readonly property string page: hw ? hw.page : "inbox"
   readonly property string tab: hw ? hw.tab : "messages"
   readonly property var selectedThread: hw ? hw.selectedThread : null
@@ -157,7 +162,8 @@ Panel {
     if (root.inboxMode) return Style.space(52)
     return 0
   }
-  readonly property int headerH: root.tabRowH + root.searchRowH
+  readonly property int statusRowH: root.audioAvailable || root.phoneSummary ? Style.space(34) : 0
+  readonly property int headerH: root.tabRowH + root.searchRowH + root.statusRowH
   readonly property int copyHintH: root.noticesTab || root.page === "thread" ? Style.space(26) : 0
   readonly property int noteH: {
     if (root.actionNote === "") return 0
@@ -270,7 +276,10 @@ Panel {
 
   onInboxListChanged: root.clampCursor()
   onSearchQueryChanged: root.cursorIndex = 0
-  onOpenedChanged: if (!root.opened) messageMenu.close()
+  onOpenedChanged: if (!root.opened) {
+    messageMenu.close()
+    audioMenu.close()
+  }
   onTabChanged: {
     root.cursorIndex = 0
     root.cursorActive = false
@@ -304,7 +313,7 @@ Panel {
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
-      blocked: messageMenu.opened || searchField.activeFocus || replyField.activeFocus || toField.activeFocus || composeField.activeFocus || root.textFocused
+      blocked: messageMenu.opened || audioMenu.opened || searchField.activeFocus || replyField.activeFocus || toField.activeFocus || composeField.activeFocus || root.textFocused
       onCloseRequested: {
         if (root.page !== "inbox" && hw) hw.backToList()
         else root.close()
@@ -334,6 +343,10 @@ Panel {
       onActivateRequested: root.openCursor()
       onDeleteRequested: root.dismissCursor()
       onTextKey: function(t) {
+        if ((t === "a" || t === "A") && root.audioAvailable) {
+          audioMenu.open()
+          return
+        }
         if (t === "/" && root.inboxMode) {
           searchField.forceActiveFocus()
           return
@@ -358,6 +371,7 @@ Panel {
         id: messageMenu
         property var message: null
         property var thread: null
+        property bool confirmShared: false
         width: Math.min(Style.space(290), keyCatcher.width)
         padding: Style.space(10)
         modal: false
@@ -366,6 +380,7 @@ Panel {
         onClosed: {
           message = null
           thread = null
+          confirmShared = false
           if (root.opened) keyCatcher.forceActiveFocus()
         }
         background: BorderSurface {
@@ -407,9 +422,86 @@ Panel {
               messageMenu.close()
             }
           }
+          Button {
+            visible: !messageMenu.message && !!messageMenu.thread && !!hw && hw.daemonStatus.removeThread
+            width: parent.width
+            text: messageMenu.confirmShared ? "Confirm Tether removal" : "Remove from Tether inbox…"
+            enabled: !!hw && root.daemonOk
+            bordered: true
+            foreground: root.fg
+            accent: root.accent
+            fontFamily: root.fontFamily
+            fontSize: Style.font.bodySmall
+            onClicked: {
+              if (!messageMenu.confirmShared) {
+                messageMenu.confirmShared = true
+                return
+              }
+              if (hw) hw.removeTetherConversation(messageMenu.thread)
+              messageMenu.close()
+            }
+          }
           Text {
             width: parent.width
-            text: "Only removes from this widget.\nTether's cache and iPhone are unchanged."
+            text: messageMenu.confirmShared
+              ? "Hides this conversation in all Tether clients on this computer. Your iPhone and stored history stay unchanged. New messages bring it back."
+              : "Widget deletion only affects this widget. Your iPhone stays unchanged."
+            textFormat: Text.PlainText
+            wrapMode: Text.WordWrap
+            color: root.muted
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+          }
+        }
+      }
+
+      Controls.Popup {
+        id: audioMenu
+        x: Math.max(0, keyCatcher.width - width - Style.space(12))
+        y: root.bannerH + root.statusRowH
+        width: Math.min(Style.space(320), keyCatcher.width)
+        padding: Style.space(12)
+        modal: false
+        focus: true
+        closePolicy: Controls.Popup.CloseOnEscape | Controls.Popup.CloseOnPressOutside
+        onOpened: contentItem.children[1].forceActiveFocus()
+        onClosed: if (root.opened) keyCatcher.forceActiveFocus()
+        background: BorderSurface {
+          color: Commons.Color.popups.background
+          borderSpec: Border.flat(root.muted, 1)
+          radius: Style.cornerRadius
+        }
+        contentItem: Column {
+          spacing: Style.space(10)
+          Text {
+            width: parent.width
+            text: hw && hw.daemonStatus.audioRoute === "here" ? "iPhone audio on computer: on"
+              : hw && hw.daemonStatus.audioRoute === "phone" ? "iPhone audio on computer: off" : "Phone audio is unavailable"
+            textFormat: Text.PlainText
+            wrapMode: Text.WordWrap
+            color: root.fg
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+          }
+          Button {
+            focusable: true
+            width: parent.width
+            text: hw && hw.audioBusy ? "Changing audio…"
+              : hw && hw.daemonStatus.audioRoute === "here" ? "Turn audio off" : "Turn audio on"
+            bordered: true
+            foreground: root.fg
+            accent: root.accent
+            fontFamily: root.fontFamily
+            fontSize: Style.font.bodySmall
+            enabled: !!hw && root.daemonOk && !hw.audioBusy
+              && (hw.daemonStatus.audioRoute === "here" || hw.daemonStatus.audioRoute === "phone")
+            onClicked: {
+              if (hw) hw.phoneAudio(hw.daemonStatus.audioRoute === "here" ? "phone" : "here")
+            }
+          }
+          Text {
+            width: parent.width
+            text: "Off keeps music and sounds on the iPhone. Your choice stays until you change it. Messages and notifications stay connected."
             textFormat: Text.PlainText
             wrapMode: Text.WordWrap
             color: root.muted
@@ -521,6 +613,41 @@ Panel {
         Column {
           width: parent.width
           spacing: 0
+
+          Item {
+            width: parent.width
+            height: root.statusRowH
+            visible: height > 0
+            Text {
+              anchors.left: parent.left
+              anchors.leftMargin: Style.space(16)
+              anchors.right: audioButton.visible ? audioButton.left : parent.right
+              anchors.rightMargin: Style.space(8)
+              anchors.verticalCenter: parent.verticalCenter
+              text: root.phoneSummary
+              textFormat: Text.PlainText
+              elide: Text.ElideRight
+              color: root.muted
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+            }
+            Button {
+              id: audioButton
+              focusable: true
+              anchors.right: parent.right
+              anchors.rightMargin: Style.space(12)
+              anchors.verticalCenter: parent.verticalCenter
+              visible: root.audioAvailable
+              text: hw && hw.daemonStatus.audioRoute === "here" ? "Audio · on"
+                : hw && hw.daemonStatus.audioRoute === "phone" ? "Audio · off" : "Audio"
+              bordered: true
+              foreground: root.fg
+              accent: root.accent
+              fontFamily: root.fontFamily
+              fontSize: Style.font.caption
+              onClicked: audioMenu.opened ? audioMenu.close() : audioMenu.open()
+            }
+          }
 
           Item {
             visible: root.inboxMode
@@ -910,6 +1037,14 @@ Panel {
             readonly property string noticeText: (modelData.primary || "")
               + (modelData.secondary && modelData.secondary !== modelData.primary ? "\n" + modelData.secondary : "")
             readonly property bool canOpen: !!modelData.webUrl || !!Model.threadForNotice(root.threads, modelData)
+            readonly property string appIcon: {
+              var names = modelData.icons || []
+              for (var i = 0; i < names.length; i++) {
+                var path = Quickshell.iconPath(names[i], true)
+                if (path) return path
+              }
+              return ""
+            }
 
             HoverHandler {
               id: nHover
@@ -947,11 +1082,38 @@ Panel {
 
               Item {
                 width: parent.width
-                height: Math.max(noticeApp.implicitHeight, noticeMeta.height)
+                height: Math.max(noticeApp.implicitHeight, noticeMeta.height, noticeIcon.height)
+
+                Item {
+                  id: noticeIcon
+                  anchors.left: parent.left
+                  anchors.verticalCenter: parent.verticalCenter
+                  width: Style.space(16)
+                  height: width
+                  Image {
+                    id: noticeImage
+                    anchors.fill: parent
+                    source: noticeRow.appIcon
+                    sourceSize.width: width * Screen.devicePixelRatio
+                    sourceSize.height: height * Screen.devicePixelRatio
+                    fillMode: Image.PreserveAspectFit
+                    visible: status === Image.Ready
+                  }
+                  Text {
+                    anchors.centerIn: parent
+                    visible: noticeImage.status !== Image.Ready
+                    text: "󰂚"
+                    textFormat: Text.PlainText
+                    color: root.muted
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                  }
+                }
 
                 Text {
                   id: noticeApp
-                  anchors.left: parent.left
+                  anchors.left: noticeIcon.right
+                  anchors.leftMargin: Style.space(6)
                   anchors.right: noticeMeta.left
                   anchors.rightMargin: Style.space(8)
                   anchors.verticalCenter: parent.verticalCenter
