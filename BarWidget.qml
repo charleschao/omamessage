@@ -15,7 +15,14 @@ BarWidget {
   property bool daemonOk: false
   property var daemonStatus: Model.parseDaemonStatus({})
   property string audioPending: ""
+  property bool audioCommandSent: false
+  property string audioPhase: ""
+  property string audioError: ""
+  property string audioRecoveryPath: ""
+  property string audioRecoveryStage: "Disconnect"
   readonly property bool audioBusy: root.audioPending !== ""
+  readonly property string audioProgress: root.audioPending === "phone" ? "Turning audio off…"
+    : root.audioPhase === "reconnecting" ? "Reconnecting audio…" : "Connecting audio…"
   property int reconnectAttempt: 0
   property var status: ({ present: false, paired: false, map: false, pbap: false, classic: false, le: false, ancs: false, mapError: "", note: "", linkReason: "", profileReason: "", ancsReason: "" })
   property var devices: []
@@ -134,8 +141,7 @@ BarWidget {
     root.sockBuf = ""
     root.status = Model.parseConnection({})
     root.daemonStatus = Model.parseDaemonStatus({})
-    root.audioPending = ""
-    audioWatchdog.stop()
+    if (root.audioBusy) root.finishAudio(false, "Tether disconnected before confirming the audio change.")
     root.calls = []
     root.markedRead = Model.emptyDict()
     root.readWatermarks = Model.emptyDict()
@@ -204,11 +210,9 @@ BarWidget {
     }
     if (cmd === "bt_status") {
       root.daemonStatus = Model.parseDaemonStatus(ev)
-      if (root.audioPending && root.daemonStatus.audioChoice === root.audioPending
+      if (root.audioPending && root.audioCommandSent && root.daemonStatus.audioChoice === root.audioPending
           && root.daemonStatus.audioRoute === root.audioPending) {
-        root.setNote(root.audioPending === "here" ? "iPhone audio on computer: on." : "iPhone audio on computer: off.")
-        root.audioPending = ""
-        audioWatchdog.stop()
+        root.finishAudio(true)
       }
       return
     }
@@ -360,20 +364,93 @@ BarWidget {
   }
 
   function phoneAudio(route) {
-    if (root.audioBusy || (route !== "here" && route !== "phone")) return false
-    if (!root.socketUp || !root.daemonStatus.audioChoice || root.daemonStatus.audioRoute === "unavailable") {
+    if (route !== "here" && route !== "phone") return false
+    var cancelOn = root.audioPending === "here" && route === "phone"
+    if (root.audioBusy) {
+      if (!cancelOn) return false
+      root.resetAudioOperation()
+    }
+    if (!root.socketUp || !root.daemonStatus.audioChoice || (root.daemonStatus.audioRoute === "unavailable" && !cancelOn)) {
       root.setNote("Phone audio is unavailable.")
       return false
     }
     root.audioPending = route
+    root.audioError = ""
+    root.audioPhase = "changing"
     audioWatchdog.restart()
-    if (!root.sendCmd({ command: "bt_set_phone_audio", route: route })) {
-      root.audioPending = ""
-      audioWatchdog.stop()
-      root.setNote("Tether is not running.")
-      return false
+    if (route === "phone") {
+      // MediaTransport appears before AVDTP Open has completed. Closing in
+      // that gap wedges BlueZ's Classic connection (br-connection-busy).
+      audioOffSettle.restart()
+      return true
     }
-    return true
+    audioRecoveryTimer.restart()
+    return root.sendAudioCommand()
+  }
+
+  function sendAudioCommand() {
+    if (!root.audioPending) return false
+    root.audioCommandSent = true
+    if (root.sendCmd({ command: "bt_set_phone_audio", route: root.audioPending })) return true
+    root.finishAudio(false, "Tether is not running.")
+    return false
+  }
+
+  function resetAudioOperation() {
+    root.audioPending = ""
+    root.audioCommandSent = false
+    root.audioPhase = ""
+    audioWatchdog.stop()
+    audioOffSettle.stop()
+    audioRecoveryTimer.stop()
+    audioReconnectDelay.stop()
+    audioRecoveryProc.running = false
+  }
+
+  function finishAudio(success, message) {
+    var route = root.audioPending
+    root.resetAudioOperation()
+    root.audioError = success ? "" : (message || "Could not change phone audio. Try again.")
+    root.setNote(success ? (route === "here" ? "iPhone audio on computer: on." : "iPhone audio on computer: off.") : root.audioError)
+    root.sendCmd({ command: "bt_status" })
+  }
+
+  function recoverPhoneAudio() {
+    if (root.audioPending !== "here") return
+    if (root.daemonStatus.audioChoice !== "here") {
+      root.finishAudio(false, "The audio preference changed in Tether. Try again.")
+      return
+    }
+    var path = Model.audioDevicePath(root.daemonStatus, root.devices)
+    if (!path) {
+      root.finishAudio(false, "Could not identify the connected iPhone for audio recovery. Open Tether and reconnect it.")
+      return
+    }
+    root.audioRecoveryPath = path
+    root.audioRecoveryStage = "Disconnect"
+    root.audioPhase = "reconnecting"
+    audioRecoveryProc.running = true
+  }
+
+  function reconnectPhoneAudio() {
+    if (root.audioPending !== "here") return
+    if (root.daemonStatus.audioChoice !== "here"
+        || Model.audioDevicePath(root.daemonStatus, root.devices) !== root.audioRecoveryPath) {
+      root.finishAudio(false, "The selected phone or audio preference changed. Try again.")
+      return
+    }
+    root.audioRecoveryStage = "Connect"
+    audioRecoveryProc.running = true
+  }
+
+  function audioRecoveryFinished(exitCode, errorText) {
+    if (root.audioPending !== "here") return
+    if (exitCode !== 0 && !(root.audioRecoveryStage === "Connect" && /already connected|inprogress|in progress/i.test(errorText))) {
+      root.finishAudio(false, "Could not reconnect iPhone audio. Open Tether to check the connection, then try again.")
+      return
+    }
+    if (root.audioRecoveryStage === "Disconnect") audioReconnectDelay.restart()
+    root.sendCmd({ command: "bt_status" })
   }
 
   function backToList() {
@@ -837,17 +914,42 @@ BarWidget {
 
   Timer {
     id: audioWatchdog
-    interval: 45000
-    onTriggered: {
-      root.audioPending = ""
-      root.setNote("Tether did not confirm the audio change. Check the iPhone's connection.")
-    }
+    interval: 60000
+    onTriggered: root.finishAudio(false, "The iPhone did not accept the audio connection. Check that it is nearby and unlocked, then try again.")
   }
 
   Timer {
-    interval: 5000
+    id: audioOffSettle
+    interval: 3000
+    onTriggered: root.sendAudioCommand()
+  }
+
+  Timer {
+    id: audioRecoveryTimer
+    interval: 12000
+    onTriggered: root.recoverPhoneAudio()
+  }
+
+  Timer {
+    id: audioReconnectDelay
+    interval: 2000
+    onTriggered: root.reconnectPhoneAudio()
+  }
+
+  Process {
+    id: audioRecoveryProc
+    property string errorText: ""
+    command: ["/usr/bin/busctl", "--system", "--timeout=10", "call", "org.bluez", root.audioRecoveryPath,
+              "org.bluez.Bearer.BREDR1", root.audioRecoveryStage]
+    stderr: StdioCollector { onStreamFinished: audioRecoveryProc.errorText = text }
+    onStarted: errorText = ""
+    onExited: function(exitCode) { root.audioRecoveryFinished(exitCode, errorText) }
+  }
+
+  Timer {
+    interval: root.audioBusy ? 1000 : 5000
     repeat: true
-    running: root.opened
+    running: root.opened || root.audioBusy
     onTriggered: {
       root.sendCmd({ command: "bt_status" })
     }

@@ -163,9 +163,23 @@ function parseDaemonStatus(obj) {
     version: version,
     removeThread: major > 0 || minor > 2 || (minor === 2 && patch >= 42),
     hideUnknown: obj.hide_unknown_senders === true,
+    audioDeviceAddress: field(obj.device_address, MAX_ADDR),
     audioChoice: /^(auto|here|phone)$/.test(obj.phone_audio || "") ? obj.phone_audio : "",
     audioRoute: /^(here|phone|unavailable)$/.test(obj.phone_audio_route || "") ? obj.phone_audio_route : "unavailable"
   }
+}
+
+function audioDevicePath(status, devices) {
+  var address = String(status && status.audioDeviceAddress || "").toUpperCase()
+  var candidates = (devices || []).filter(function(d) {
+    return address ? String(d.address).toUpperCase() === address : d.iphone && d.connected
+  })
+  if (candidates.length !== 1) return ""
+  var device = candidates[0]
+  var path = String(device.path || "")
+  if (!/^\/org\/bluez\/hci\d+\/dev_(?:[0-9a-f]{2}_){5}[0-9a-f]{2}$/i.test(path)) return ""
+  return path.slice(path.lastIndexOf("/dev_") + 5).replace(/_/g, ":").toUpperCase()
+    === String(device.address).toUpperCase() ? path : ""
 }
 
 function phoneStatus(status) {
@@ -186,6 +200,7 @@ function parseDevices(obj) {
     if (!d) continue
     out.push({
       address: field(d.address, MAX_ADDR),
+      path: field(d.path, MAX_HANDLE),
       name: field(d.name, MAX_NAME),
       connected: d.connected === true || d.classic_connected === true,
       map: d.map === true,

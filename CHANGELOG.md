@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Recover stalled audio enablement with one selected-iPhone Classic reconnect; allow cancellation and show errors in the Audio menu. Delay manual audio-off briefly so an opening stream is not interrupted, avoiding BlueZ's `br-connection-busy` failure.
 - Add **Audio → Turn audio off / on** to keep music and sounds on the iPhone or route them to the computer. The choice stays until changed; there is no automatic restore.
 - Show phone battery, carrier, and signal when available; recognize intentionally released and busy MAP connections, and reflect Tether's unknown-sender filter.
 - Add notification app icons using installed theme/Tether icons, and recognize bare-domain HTTPS destinations.

@@ -26,6 +26,7 @@ function widget() {
     socketUp: true, status: { map: true }, daemonOk: true, sockBuf: "",
     daemonStatus: Model.parseDaemonStatus({ version: "0.3.2" }),
     audioPending: "",
+    audioCommandSent: false, audioPhase: "", audioError: "", devices: [],
     outbox: [], sendQueue: [], activeSend: null, sendSession: "local-test", sendSerial: 0,
     serverMessages: [], selectedThread: alice, threads: [alice, bob],
     replyDraft: "", composeBody: "", composeTo: "", page: "thread", tab: "messages",
@@ -46,8 +47,11 @@ function widget() {
     failedSend: { get: () => [...root.outbox].reverse().find(row => row.failed && root.selectedThread
       && Model.sameThread(row.thread, root.selectedThread.handle)) || null }
   })
+  const audioTimers = Object.fromEntries(["audioWatchdog", "audioOffSettle", "audioRecoveryTimer", "audioReconnectDelay"].map(name =>
+    [name, { running: false, restart() { this.running = true }, stop() { this.running = false } }]))
+  const audioRecoveryProc = { running: false }
   const ctx = vm.createContext({ root, Model, LocalInbox, sendWatchdog: timer, panelLoader: { item: null },
-    audioWatchdog: { restart() {}, stop() {} },
+    ...audioTimers, audioRecoveryProc,
     contactTimer: { restart() {} } })
   for (const [source, name] of functions) {
     if (name === "sendCmd") continue
@@ -60,6 +64,8 @@ function widget() {
     command: "bt_send_result", thread: item.thread, operation_id: item.handle, success, ...extra
   }))
   root.timer = timer
+  root.audioTimers = audioTimers
+  root.audioRecoveryProc = audioRecoveryProc
   return root
 }
 
@@ -504,6 +510,9 @@ console.log("upstream compatibility and shared removal ok")
   w.handleLine(JSON.stringify({ command: "bt_status", phone_audio: "auto", phone_audio_route: "here" }))
   assert(w.phoneAudio("phone"))
   assert.equal(w.audioPending, "phone")
+  assert.equal(w.commands.length, 0, "off waits for the audio stream to settle")
+  assert(w.audioTimers.audioOffSettle.running)
+  w.sendAudioCommand() // the settling delay expires
   assert.equal(w.phoneAudio("here"), false, "wait for the pending routing request")
   assert.deepEqual(JSON.parse(JSON.stringify(w.commands.at(-1))), { command: "bt_set_phone_audio", route: "phone" })
   w.handleLine(JSON.stringify({ command: "bt_status", phone_audio: "phone", phone_audio_route: "here" }))
@@ -527,3 +536,85 @@ console.log("upstream compatibility and shared removal ok")
   assert.equal(w.phoneAudio("phone"), false, "older daemons do not expose routing")
 }
 console.log("manual phone audio toggle ok")
+
+function stalledAudio() {
+  const w = widget()
+  w.handleLine(JSON.stringify({ command: "bt_status", phone_audio: "here", phone_audio_route: "phone",
+    device_address: "AA:BB:CC:DD:EE:FF" }))
+  w.handleLine(JSON.stringify({ command: "bt_devices", devices: [{ address: "AA:BB:CC:DD:EE:FF",
+    path: "/org/bluez/hci0/dev_AA_BB_CC_DD_EE_FF", iphone: true, connected: true }] }))
+  assert(w.phoneAudio("here"))
+  return w
+}
+
+{
+  const w = stalledAudio()
+  assert(w.audioTimers.audioRecoveryTimer.running)
+  w.recoverPhoneAudio() // initial connection did not produce a transport
+  assert.equal(w.audioPhase, "reconnecting")
+  assert.equal(w.audioRecoveryStage, "Disconnect")
+  assert.equal(w.audioRecoveryPath, "/org/bluez/hci0/dev_AA_BB_CC_DD_EE_FF")
+  assert(w.audioRecoveryProc.running)
+  w.audioRecoveryProc.running = false
+  w.audioRecoveryFinished(0, "")
+  assert(w.audioTimers.audioReconnectDelay.running)
+  w.reconnectPhoneAudio()
+  assert.equal(w.audioRecoveryStage, "Connect")
+  // Tether's supervisor often gets there before the explicit Connect call.
+  w.audioRecoveryProc.running = false
+  w.audioRecoveryFinished(1, "Call failed: Already Connected")
+  assert(w.audioBusy)
+  assert.equal(w.audioError, "")
+  w.handleLine(JSON.stringify({ command: "bt_status", phone_audio: "here", phone_audio_route: "here" }))
+  assert.equal(w.audioBusy, false)
+  assert(Object.values(w.audioTimers).every(timer => !timer.running))
+  const before = w.commands.length
+  w.recoverPhoneAudio()
+  assert.equal(w.commands.length, before, "completed requests never reconnect again")
+}
+
+{
+  const w = stalledAudio()
+  w.recoverPhoneAudio()
+  w.daemonStatus.audioRoute = "unavailable" // Classic is disconnected
+  assert(w.phoneAudio("phone"), "turning on can be cancelled during recovery")
+  assert.equal(w.audioRecoveryProc.running, false)
+  assert.equal(w.audioTimers.audioReconnectDelay.running, false)
+  w.reconnectPhoneAudio()
+  assert.equal(w.audioRecoveryProc.running, false, "a cancelled request must not reconnect later")
+  w.sendAudioCommand()
+  assert.equal(w.commands.at(-1).route, "phone")
+  w.handleLine(JSON.stringify({ command: "bt_status", phone_audio: "phone", phone_audio_route: "phone" }))
+  assert.equal(w.audioBusy, false)
+}
+
+{
+  const w = stalledAudio()
+  w.recoverPhoneAudio()
+  w.audioRecoveryFinished(1, "Call failed: unavailable")
+  assert.equal(w.audioBusy, false, "failure releases the button")
+  assert.match(w.audioError, /Could not reconnect/)
+  assert(w.phoneAudio("here"), "failed operations can be retried")
+  w.finishAudio(false, "Connection timed out")
+  assert.equal(w.audioBusy, false)
+  assert.equal(w.audioRecoveryProc.running, false)
+  assert.equal(w.audioError, "Connection timed out")
+}
+
+{
+  const w = stalledAudio()
+  w.recoverPhoneAudio()
+  w.daemonStatus.audioDeviceAddress = "11:22:33:44:55:66"
+  w.reconnectPhoneAudio()
+  assert.equal(w.audioBusy, false, "changing the selected phone cancels recovery")
+  assert.match(w.audioError, /selected phone/)
+}
+
+{
+  const w = stalledAudio()
+  w.daemonStatus.audioChoice = "phone"
+  w.recoverPhoneAudio()
+  assert.equal(w.audioRecoveryProc.running, false, "respect a later routing change in Tether")
+  assert.equal(w.audioBusy, false)
+}
+console.log("audio recovery, cancellation, and failure handling ok")

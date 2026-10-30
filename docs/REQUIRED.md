@@ -24,6 +24,8 @@ The same socket `tether-gtk` uses. Typical commands:
 
 The audio toggle talks JSON directly to the same daemon socket. **Off** selects the iPhone; **On** selects the computer. Tether remembers the choice, and the widget never restores or reverses it automatically. Existing system audio roles determine whether routing is available.
 
+If enabling audio stalls, the widget attempts one recovery with `busctl` on the selected iPhone's `org.bluez.Bearer.BREDR1` interface. This reconnects only the Classic link, so Messages may reconnect briefly while the LE notification link and pairing remain intact. Recovery requires BlueZ's experimental bearer API, which is already a Tether requirement. The widget confirms the actual audio route, displays failures in the Audio menu, and allows cancellation. Turning audio off includes a short settling delay to avoid interrupting AVDTP Open. No scheduled audio restore or shutoff is created.
+
 OTP vault, browser, and mail add-ons stay in Tether (Firefox / Thunderbird). They are not installed by this plugin. Clipboard sync and file transfer stay in `tetherd` / `tether-gtk` / the iOS app.
 
 Those binaries come from [Tether](https://github.com/zackb/tether) by **Zack Bartel**. Install that project first (on Arch: `tether-bin` from the AUR), complete `tether --bt-setup`, and pair the iPhone over Bluetooth.

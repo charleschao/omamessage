@@ -334,6 +334,12 @@ eq("Tether filtering reflected", M.parseDaemonStatus({ hide_unknown_senders: tru
 eq("notification app icon", M.notificationIcons("com.hammerandchisel.discord", 0)[1], "tether-app-discord")
 eq("unknown app has icon fallback", M.notificationIcons("unknown.app", 0), ["preferences-system-notifications-symbolic"])
 
+const audioDevice = { address: "AA:BB:CC:DD:EE:FF", path: "/org/bluez/hci0/dev_AA_BB_CC_DD_EE_FF", iphone: true, connected: true }
+eq("selected audio device path", M.audioDevicePath({ audioDeviceAddress: "aa:bb:cc:dd:ee:ff" }, [audioDevice]), audioDevice.path)
+eq("never reconnect a different selected device", M.audioDevicePath({ audioDeviceAddress: "11:22:33:44:55:66" }, [audioDevice]), "")
+eq("reject mismatched device path", M.audioDevicePath({}, [{ ...audioDevice, path: "/org/bluez/hci0/dev_11_22_33_44_55_66" }]), "")
+eq("reject ambiguous default phone", M.audioDevicePath({}, [audioDevice, { ...audioDevice, address: "11:22:33:44:55:66" }]), "")
+
 if (failed) {
   console.error(failed + " failed")
   process.exit(1)

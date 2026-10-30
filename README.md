@@ -99,7 +99,9 @@ It does **not** stop or uninstall Tether. `tetherd`, `tether-gtk`, pairing, and 
 
 - The popout shows phone battery and cellular status when available, and distinguishes a released Messages connection from one busy on another computer
 - If **Hide unknown senders** is enabled in Tether, its filtered inbox is used and the popout shows **Unknown senders hidden**
-- **Audio → Turn audio off** keeps the iPhone's music and sounds on the phone. **Turn audio on** routes them to the computer. Your choice stays until you toggle it again or change it in Tether; there is no automatic restore. Messages and notifications stay connected
+- **Audio → Turn audio off** keeps the iPhone's music and sounds on the phone. **Turn audio on** routes them to the computer. Your choice stays until you toggle it again or change it in Tether; there is no automatic restore
+- If turning audio on stalls, the widget tries one Classic Bluetooth reconnect for the selected iPhone. Messages may briefly reconnect; the Bluetooth pairing and LE notification link are kept. **Cancel · keep on iPhone** stops an in-progress attempt. Failures appear in the Audio menu and leave the toggle available to retry
+- Turning audio off waits briefly for an opening stream to settle, avoiding a BlueZ state that can block later audio connections
 - Audio routing needs Tether 0.2.43 or newer and an available Bluetooth audio route. The toggle talks directly to the daemon socket. This control does not change your Bluetooth audio roles or enable call audio. Tether may restart WirePlumber once when setting up its per-phone routing rule for the first time
 
 Right-click a conversation for **Remove from Tether inbox…** (Tether 0.2.42+). After confirmation, this hides the displayed history across Tether clients on this computer; a newer message brings it back. The iPhone and Tether's stored history stay unchanged. **Delete conversation from widget** remains a separate, widget-only action. Individual-message removal stays widget-only.

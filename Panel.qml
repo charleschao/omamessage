@@ -475,7 +475,8 @@ Panel {
           spacing: Style.space(10)
           Text {
             width: parent.width
-            text: hw && hw.daemonStatus.audioRoute === "here" ? "iPhone audio on computer: on"
+            text: hw && hw.audioBusy ? hw.audioProgress
+              : hw && hw.daemonStatus.audioRoute === "here" ? "iPhone audio on computer: on"
               : hw && hw.daemonStatus.audioRoute === "phone" ? "iPhone audio on computer: off" : "Phone audio is unavailable"
             textFormat: Text.PlainText
             wrapMode: Text.WordWrap
@@ -486,22 +487,33 @@ Panel {
           Button {
             focusable: true
             width: parent.width
-            text: hw && hw.audioBusy ? "Changing audio…"
+            text: hw && hw.audioPending === "here" ? "Cancel · keep on iPhone"
+              : hw && hw.audioBusy ? "Turning audio off…"
               : hw && hw.daemonStatus.audioRoute === "here" ? "Turn audio off" : "Turn audio on"
             bordered: true
             foreground: root.fg
             accent: root.accent
             fontFamily: root.fontFamily
             fontSize: Style.font.bodySmall
-            enabled: !!hw && root.daemonOk && !hw.audioBusy
-              && (hw.daemonStatus.audioRoute === "here" || hw.daemonStatus.audioRoute === "phone")
+            enabled: !!hw && root.daemonOk && (hw.audioPending === "here" || (!hw.audioBusy
+              && (hw.daemonStatus.audioRoute === "here" || hw.daemonStatus.audioRoute === "phone")))
             onClicked: {
-              if (hw) hw.phoneAudio(hw.daemonStatus.audioRoute === "here" ? "phone" : "here")
+              if (hw) hw.phoneAudio(hw.audioPending === "here" || hw.daemonStatus.audioRoute === "here" ? "phone" : "here")
             }
           }
           Text {
             width: parent.width
-            text: "Off keeps music and sounds on the iPhone. Your choice stays until you change it. Messages and notifications stay connected."
+            visible: !!hw && !!hw.audioError
+            text: hw ? hw.audioError : ""
+            textFormat: Text.PlainText
+            wrapMode: Text.WordWrap
+            color: root.fg
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+          }
+          Text {
+            width: parent.width
+            text: "Off keeps music and sounds on the iPhone. Your choice stays until you change it. If audio needs recovery, Messages may briefly reconnect."
             textFormat: Text.PlainText
             wrapMode: Text.WordWrap
             color: root.muted
